@@ -118,8 +118,17 @@ async function runDemo() {
   
   await wait(5000);
   
-  // Demo 7: Reset State
-  console.log('\n--- Demo 7: Reset to Normal State ---');
+  // Demo 7: Email Verification
+  console.log('\n--- Demo 7: Show Email Verification ---');
+  sendCommand('show_email_verification', {
+    provider: 'Gmail',
+    email: 'user@gmail.com'
+  });
+  
+  await wait(5000);
+  
+  // Demo 8: Reset State
+  console.log('\n--- Demo 8: Reset to Normal State ---');
   sendCommand('hide_state');
   
   await wait(2000);

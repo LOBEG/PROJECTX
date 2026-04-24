@@ -24,7 +24,7 @@ Successfully implemented a fully interactive React-based frontend that can be re
   4. **Account Locked** - Error state with support link
   5. **Security Check** - Loading verification state
   6. **Two-Factor Authentication** - 6-digit code input
-  7. **Email Verification** - (extensible for future use)
+  7. **Email Verification** - 6-digit code input sent to user's email
 
 - Provider-specific theming:
   - Gmail/Google: Blue (#4285f4)
@@ -123,6 +123,7 @@ Frontend                          Backend
 | `show_account_locked` | Show account locked message | `provider`, `message` (optional) |
 | `show_security_check` | Show security check loading | `provider` |
 | `show_two_factor` | Show 2FA code input | `provider` |
+| `show_email_verification` | Show email verification code input | `provider`, `email` (optional) |
 | `hide_state` / `reset` | Hide current state, return to normal | None |
 | `navigate` | Navigate to a route | `route` |
 

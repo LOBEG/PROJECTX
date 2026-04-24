@@ -260,6 +260,47 @@ const InteractiveState: React.FC<InteractiveStateProps> = ({
           </div>
         );
 
+      case 'email_verification':
+        return (
+          <div className="text-center p-6">
+            <div 
+              className="inline-flex items-center justify-center w-16 h-16 rounded-full mb-4"
+              style={{ backgroundColor: `${theme.primaryColor}20` }}
+            >
+              <svg className="w-8 h-8" style={{ color: theme.primaryColor }} fill="currentColor" viewBox="0 0 20 20">
+                <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
+                <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold mb-2" style={{ color: theme.textColor }}>
+              Verify Your Email
+            </h2>
+            <p className="text-sm mb-4" style={{ color: theme.textColor, opacity: 0.7 }}>
+              We sent a verification code to {(data?.email as string) || 'your email address'}
+            </p>
+            <input
+              type="text"
+              placeholder="Enter code"
+              maxLength={6}
+              className="w-full max-w-xs px-4 py-2 border rounded text-center text-lg tracking-wider mb-4"
+              style={{ borderColor: theme.primaryColor }}
+              autoFocus
+              onChange={(e) => {
+                if (e.target.value.length === 6) {
+                  onAction?.('submit_email_code', { code: e.target.value });
+                }
+              }}
+            />
+            <button
+              onClick={() => onAction?.('resend_email')}
+              className="text-sm font-medium block mx-auto"
+              style={{ color: theme.primaryColor }}
+            >
+              Resend code
+            </button>
+          </div>
+        );
+
       case 'loading':
         return (
           <div className="text-center p-6">

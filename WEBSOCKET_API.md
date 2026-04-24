@@ -107,6 +107,19 @@ Display a two-factor authentication code input.
 }
 ```
 
+### `show_email_verification`
+Display an email verification code input.
+
+```json
+{
+  "command": "show_email_verification",
+  "data": {
+    "provider": "Gmail",
+    "email": "user@gmail.com"
+  }
+}
+```
+
 ### `hide_state` / `reset`
 Hide the current interactive state and return to the normal flow.
 
@@ -211,7 +224,7 @@ Sent when user submits SMS or 2FA verification code.
   "command": "verification_code",
   "data": {
     "code": "123456",
-    "type": "sms"  // or "2fa"
+    "type": "sms"  // or "2fa", "email"
   }
 }
 ```
