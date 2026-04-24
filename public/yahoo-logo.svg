@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 394 80" width="394" height="80" role="img" aria-labelledby="yahoo-logo-title">
+  <title id="yahoo-logo-title">Yahoo</title>
+  <defs>
+    <style>
+      .yahoo-text { font-family: 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', 'Nimbus Sans L', FreeSans, sans-serif; }
+    </style>
+  </defs>
+  <text x="197" y="62" text-anchor="middle" class="yahoo-text" font-size="66" font-weight="700" fill="#720e9e" letter-spacing="-2">Yahoo!</text>
+</svg>
