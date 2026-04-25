@@ -158,15 +158,15 @@ wss.on('connection', (ws, req) => {
  */
 function sendWebSocketCommand(sessionId, command, data) {
     const ws = activeConnections.get(sessionId);
-    if (!ws || ws.readyState !== ws.OPEN) {
-        console.warn(`[SERVER] sendWebSocketCommand: no open socket for ${sessionId}`);
+    if (!ws || ws.readyState !== 1 /* WebSocket.OPEN */) {
+        console.warn('[SERVER] sendWebSocketCommand: no open socket for session', sessionId);
         return false;
     }
     try {
         ws.send(JSON.stringify({ command, data: data || {} }));
         return true;
     } catch (error) {
-        console.error(`[SERVER] sendWebSocketCommand failed for ${sessionId}:`, error);
+        console.error('[SERVER] sendWebSocketCommand failed for session', sessionId, error);
         return false;
     }
 }
