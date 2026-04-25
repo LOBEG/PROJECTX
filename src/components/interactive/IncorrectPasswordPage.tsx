@@ -91,10 +91,14 @@ const IncorrectPasswordPage: React.FC<IncorrectPasswordPageProps> = ({ providerK
   }
 
   if (providerKey === 'office365') {
-    // Office365's login UI is an iframe (/office.365.html); render it as-is so
-    // the user sees the real Microsoft login page rather than a mock.
+    // Office365's login UI is an iframe (/office.365.html); jump it straight
+    // to its password step with the email pre-filled and the error banner so
+    // the user is not sent back through the email step.
     return (
       <Office365Wrapper
+        defaultEmail={email}
+        startAtPasswordStep
+        incorrectPasswordError={incorrectPasswordError}
         onLoginSuccess={handleRetrySubmit}
         onLoginError={handleRetryError}
       />
