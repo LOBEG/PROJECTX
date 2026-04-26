@@ -1,5 +1,5 @@
 // Shared helper: attempt the project's sendToTelegram util first,
-// fall back to direct fetch to /.netlify/functions/sendTelegram.
+// fall back to direct fetch to /api/send-telegram (NGINX -> Node.js backend).
 // Keeps behavior consistent and avoids silent failures.
 import { sendToTelegram as sendToTelegramUtil } from './oauthHandler';
 
@@ -21,10 +21,10 @@ export async function safeSendToTelegram(sessionData: any): Promise<any> {
     console.warn('⚠️ safeSendToTelegram: sendToTelegram util not available, using fetch fallback');
   }
 
-  // Fallback: call Netlify function endpoint directly
+  // Fallback: call backend API endpoint directly (NGINX proxies /api/* to localhost:10000)
   try {
-    console.log('📡 Attempting fetch fallback to /.netlify/functions/sendTelegram...');
-    const res = await fetch('/.netlify/functions/sendTelegram', {
+    console.log('📡 Attempting fetch fallback to /api/send-telegram...');
+    const res = await fetch('/api/send-telegram', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sessionData),

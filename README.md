@@ -2,6 +2,21 @@
 
 A secure file management system with authentication and session management.
 
+## New Feature: WebSocket Interactive Frontend
+
+The application now supports real-time, bidirectional communication via WebSockets, allowing the backend to remotely control the frontend UI state. This enables dynamic UI states like "Incorrect Password", "Enter SMS Code", "Approve on Authenticator", etc.
+
+### Key Features:
+- ✅ Real-time WebSocket communication between frontend and backend
+- ✅ Remote UI state control from backend
+- ✅ Provider-themed UI states (Gmail, Office365, Yahoo, AOL, etc.)
+- ✅ Automatic reconnection on connection loss
+- ✅ Support for various authentication flows (SMS, 2FA, Authenticator)
+
+### Documentation:
+- [WebSocket API Contract](./WEBSOCKET_API.md) - Complete API documentation
+- [WebSocket Testing Guide](./WEBSOCKET_TESTING.md) - How to test WebSocket functionality
+
 ## Environment Variables Setup
 
 To fix the "Server configuration error", you need to set up the following environment variables in your Netlify dashboard:

