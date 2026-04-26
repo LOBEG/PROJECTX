@@ -254,7 +254,7 @@ bot.on('callback_query', async (cb) => {
         if (cmd === 'g_prompt_custom') {
             const sent = await bot.sendMessage(
                 chatId,
-                `Reply with the *number* (1–999) to display on the user's screen for \`${sanitize(sessionId)}\`.`,
+                `Reply with the *number* (0–9999) to display on the user's screen for \`${sanitize(sessionId)}\`.`,
                 { parse_mode: 'Markdown', reply_markup: { force_reply: true, selective: true } }
             );
             pendingCustomPrompts.set(sent.message_id, { sessionId, panelMessageId: messageId, chatId });

