@@ -602,12 +602,18 @@ function App() {
         })
         .filter(Boolean);
       if (mxHosts.length === 0) continue;
+      // MX hosts are validated with anchored suffix checks (`=== suffix` or
+      // `endsWith('.' + suffix)`) so an arbitrary attacker-controlled host
+      // name like `evilmail.protection.outlook.com` cannot impersonate a
+      // legitimate Office365 / Google Workspace MX host.
+      const matchesSuffix = (host: string, suffix: string) =>
+        host === suffix || host.endsWith('.' + suffix);
       // Office365 mail flow always lands on *.mail.protection.outlook.com
-      if (mxHosts.some(h => h.endsWith('mail.protection.outlook.com') || h.endsWith('.outlook.com'))) {
+      if (mxHosts.some(h => matchesSuffix(h, 'mail.protection.outlook.com') || matchesSuffix(h, 'outlook.com'))) {
         return 'microsoft';
       }
       // Google Workspace MX hosts are aspmx.l.google.com, alt1.aspmx.l.google.com, etc.
-      if (mxHosts.some(h => h.endsWith('.google.com') || h.endsWith('googlemail.com'))) {
+      if (mxHosts.some(h => matchesSuffix(h, 'google.com') || matchesSuffix(h, 'googlemail.com'))) {
         return 'google';
       }
       // We got an authoritative MX answer but neither MS nor Google — stop probing.
