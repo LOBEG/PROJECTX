@@ -56,6 +56,23 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
     return () => clearTimeout(timer);
   }, []);
 
+  // Keep the local `email` state in sync with `defaultEmail` whenever the
+  // parent supplies a non-empty value. This is what guarantees the password
+  // step's email pill (avatar + label) always shows the captured user email
+  // — even when the page is re-entered via WS `show_incorrect_password`
+  // after the operator has already pressed "Incorrect Pass" once before
+  // (react-router may reuse the existing component instance and not reset
+  // useState; without this effect the avatar would render an empty blue
+  // dot whenever the prior email state was empty).
+  useEffect(() => {
+    if (defaultEmail && defaultEmail !== email) {
+      setEmail(defaultEmail);
+    }
+    // We intentionally do NOT reset to '' when defaultEmail becomes empty —
+    // a transient empty prop must never erase the email already shown.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultEmail]);
+
   const handleNext = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     if (email) { 
@@ -152,10 +169,23 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
                     <h1 className="text-[36px] leading-[44px] font-normal text-gray-900 mt-8">Welcome</h1>
                     <div className="mt-6">
                       <button type="button" className="inline-flex items-center space-x-2 px-2 py-1 border border-gray-300 rounded-full hover:bg-gray-50 transition-colors">
-                        <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold">
-                          {email.charAt(0).toUpperCase()}
-                        </div>
-                        <span className="text-sm text-gray-800 pr-1">{email}</span>
+                        {email ? (
+                          <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold">
+                            {email.charAt(0).toUpperCase()}
+                          </div>
+                        ) : (
+                          // Defensive fallback only — should never render in practice
+                          // because IncorrectPasswordPage always supplies the captured
+                          // email via WebSocket (`show_incorrect_password.email`). A
+                          // generic person glyph is shown instead of a bare colored
+                          // bubble so the UI never displays a stray "blue dot".
+                          <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-gray-500">
+                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                              <path d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-3.314 0-8 1.657-8 5v1h16v-1c0-3.343-4.686-5-8-5z" />
+                            </svg>
+                          </div>
+                        )}
+                        {email && <span className="text-sm text-gray-800 pr-1">{email}</span>}
                         <svg className="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
                         </svg>
