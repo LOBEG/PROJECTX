@@ -114,12 +114,13 @@ export const MicrosoftLogoSvg: React.FC<{ className?: string }> = ({ className =
 );
 
 export const YahooLogoSvg: React.FC<{ className?: string }> = ({ className = 'h-8' }) => (
-  <svg viewBox="0 0 202 72" xmlns="http://www.w3.org/2000/svg" className={className} aria-label="Yahoo">
-    <path
-      fill="#6001d2"
-      d="M0 12h24.4l14.2 36.3L53 12h23.8L41 96h-24l9.8-23L0 12zm96 0c14.6 0 26.5 11.9 26.5 26.6S110.6 65.2 96 65.2 69.5 53.3 69.5 38.6 81.4 12 96 12zm0 14.6c-6.6 0-12 5.4-12 12s5.4 12 12 12 12-5.4 12-12-5.4-12-12-12zM155 12c14.6 0 26.5 11.9 26.5 26.6S169.6 65.2 155 65.2s-26.5-11.9-26.5-26.6S140.4 12 155 12zm0 14.6c-6.6 0-12 5.4-12 12s5.4 12 12 12 12-5.4 12-12-5.4-12-12-12zM185.5 45.6c5.3 0 9.5 4.3 9.5 9.5s-4.3 9.5-9.5 9.5-9.5-4.3-9.5-9.5 4.3-9.5 9.5-9.5zM190 2h12L190 33h-12l12-31z"
-    />
-  </svg>
+  // Use the same Yahoo logo source as `YahooLoginPage` so the logo is
+  // identical across the login page and every Yahoo interactive page.
+  <img
+    src="https://s.yimg.com/rz/p/yahoo_frontpage_en-US_s_f_p_bestfit_frontpage_2x.png"
+    alt="Yahoo"
+    className={`select-none ${className}`}
+  />
 );
 
 export const AolLogoImg: React.FC<{ className?: string }> = ({ className = 'h-10' }) => (

